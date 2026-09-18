@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
-import { geminiErrorResponse } from './lib/geminiErrors';
+import { geminiErrorResponse } from './lib/geminiErrors.js';
 import dotenv from 'dotenv';
 
 dotenv.config();

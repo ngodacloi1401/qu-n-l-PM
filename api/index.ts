@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
-import { geminiErrorResponse } from '../lib/geminiErrors';
+import { geminiErrorResponse } from '../lib/geminiErrors.js';
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));

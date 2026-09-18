@@ -16,6 +16,7 @@ import {
 } from '../types/redmine';
 
 import { buildAIReportPayload, readAIReportResponse } from './aiPayload';
+import { readIssueListResponse } from './issueResponse';
 
 const STORAGE_KEY_URL = 'redmine_pm_base_url';
 const STORAGE_KEY_API_KEY = 'redmine_pm_api_key';
@@ -357,12 +358,7 @@ export async function getIssues(params: IssueFilterParams = {}): Promise<{ issue
   }
 
   const res = await fetch(`/api/redmine/issues?${query.toString()}`, { headers: getHeaders() });
-  if (!res.ok) throw new Error('Lỗi khi tải danh sách công việc');
-  const data = await res.json();
-  return {
-    issues: data.issues || [],
-    total_count: data.total_count || (data.issues ? data.issues.length : 0),
-  };
+  return readIssueListResponse(res);
 }
 
 export interface FetchProgress {
