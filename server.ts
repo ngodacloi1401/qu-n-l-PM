@@ -251,6 +251,30 @@ app.get('/api/redmine/versions', async (req: Request, res: Response) => {
   }
 });
 
+// Custom Fields
+app.get('/api/redmine/custom_fields', async (req: Request, res: Response) => {
+  try {
+    const result = await fetchRedmine(req, '/custom_fields.json');
+    return res.status(result.status).json(result.data);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || 'Failed to fetch custom fields' });
+  }
+});
+
+// Project Issue Categories
+app.get('/api/redmine/issue_categories', async (req: Request, res: Response) => {
+  try {
+    const projectId = req.query.project_id;
+    if (!projectId || projectId === 'all') {
+      return res.json({ issue_categories: [] });
+    }
+    const result = await fetchRedmine(req, `/projects/${projectId}/issue_categories.json`);
+    return res.status(result.status).json(result.data);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || 'Failed to fetch issue categories' });
+  }
+});
+
 // Time entries
 app.get('/api/redmine/time_entries', async (req: Request, res: Response) => {
   try {

@@ -6,6 +6,8 @@ import {
   RedmineStatus,
   RedmineTracker,
   RedminePriority,
+  RedmineCustomField,
+  RedmineIssueCategory,
   RedmineMembership,
   RedmineVersion,
   RedmineTimeEntry,
@@ -265,10 +267,13 @@ export async function createIssue(issuePayload: {
   description?: string;
   priority_id?: number;
   assigned_to_id?: number;
+  category_id?: number;
   fixed_version_id?: number;
+  parent_issue_id?: number;
   estimated_hours?: number;
   start_date?: string;
   due_date?: string;
+  custom_fields?: { id: number; value: any }[];
 }): Promise<RedmineIssue> {
   const res = await fetch('/api/redmine/issues', {
     method: 'POST',
@@ -289,10 +294,13 @@ export async function updateIssue(
     status_id?: number;
     done_ratio?: number;
     assigned_to_id?: number;
+    category_id?: number;
     priority_id?: number;
     notes?: string;
     estimated_hours?: number;
+    start_date?: string;
     due_date?: string;
+    custom_fields?: { id: number; value: any }[];
   }
 ): Promise<void> {
   const res = await fetch(`/api/redmine/issues/${id}`, {
@@ -333,6 +341,20 @@ export async function getPriorities(): Promise<RedminePriority[]> {
   if (!res.ok) throw new Error('Lỗi khi tải mức độ ưu tiên');
   const data = await res.json();
   return data.issue_priorities || [];
+}
+
+export async function getCustomFields(): Promise<RedmineCustomField[]> {
+  const res = await fetch('/api/redmine/custom_fields', { headers: getHeaders() });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.custom_fields || [];
+}
+
+export async function getIssueCategories(projectId: number | string): Promise<RedmineIssueCategory[]> {
+  const res = await fetch(`/api/redmine/issue_categories?project_id=${projectId}`, { headers: getHeaders() });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.issue_categories || [];
 }
 
 export async function getMemberships(projectId: number | string): Promise<RedmineMembership[]> {

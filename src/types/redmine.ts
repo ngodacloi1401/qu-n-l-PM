@@ -3,6 +3,32 @@ export interface RedmineNamedEntity {
   name: string;
 }
 
+export interface RedmineCustomField {
+  id: number;
+  name: string;
+  customized_type?: string;
+  field_format?: string;
+  regexp?: string;
+  min_length?: number;
+  max_length?: number;
+  is_required?: boolean;
+  is_filter?: boolean;
+  searchable?: boolean;
+  multiple?: boolean;
+  default_value?: any;
+  visible?: boolean;
+  possible_values?: { value: string; label?: string }[] | string[];
+  trackers?: RedmineNamedEntity[];
+  roles?: RedmineNamedEntity[];
+}
+
+export interface RedmineIssueCategory {
+  id: number;
+  name: string;
+  project?: RedmineNamedEntity;
+  assigned_to?: RedmineNamedEntity;
+}
+
 export interface RedmineUser {
   id: number;
   login?: string;
@@ -20,6 +46,8 @@ export interface RedmineProject {
   identifier: string;
   description?: string;
   status?: number;
+  trackers?: RedmineNamedEntity[];
+  issue_categories?: RedmineNamedEntity[];
   created_on?: string;
   updated_on?: string;
 }
@@ -29,6 +57,7 @@ export interface RedmineTracker {
   name: string;
   description?: string;
   default_status?: RedmineNamedEntity;
+  enabled_standard_fields?: string[];
 }
 
 export interface RedmineStatus {
@@ -75,6 +104,13 @@ export interface RedmineJournal {
   details?: RedmineJournalDetail[];
 }
 
+export interface RedmineIssueCustomFieldValue {
+  id: number;
+  name: string;
+  value: any;
+  multiple?: boolean;
+}
+
 export interface RedmineIssue {
   id: number;
   project: RedmineNamedEntity;
@@ -83,7 +119,9 @@ export interface RedmineIssue {
   priority: RedmineNamedEntity;
   author: RedmineNamedEntity;
   assigned_to?: RedmineNamedEntity;
+  category?: RedmineNamedEntity;
   fixed_version?: RedmineNamedEntity;
+  parent?: { id: number };
   subject: string;
   description?: string;
   start_date?: string;
@@ -92,6 +130,7 @@ export interface RedmineIssue {
   is_private?: boolean;
   estimated_hours?: number;
   spent_hours?: number;
+  custom_fields?: RedmineIssueCustomFieldValue[];
   created_on: string;
   updated_on: string;
   closed_on?: string;
@@ -130,3 +169,4 @@ export type TimePeriodType =
   | 'custom';
 
 export type DateFieldType = 'created_on' | 'updated_on' | 'due_date';
+

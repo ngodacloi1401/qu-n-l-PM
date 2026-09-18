@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   getCurrentUser,
   getProjects,
@@ -6,6 +6,8 @@ import {
   getStatuses,
   getTrackers,
   getPriorities,
+  getCustomFields,
+  getIssueCategories,
   getMemberships,
   getVersions,
   getTimeEntries,
@@ -21,6 +23,8 @@ import {
   RedmineStatus,
   RedmineTracker,
   RedminePriority,
+  RedmineCustomField,
+  RedmineIssueCategory,
   RedmineMembership,
   RedmineVersion,
   RedmineTimeEntry,
@@ -49,6 +53,8 @@ export default function App() {
   const [statuses, setStatuses] = useState<RedmineStatus[]>([]);
   const [trackers, setTrackers] = useState<RedmineTracker[]>([]);
   const [priorities, setPriorities] = useState<RedminePriority[]>([]);
+  const [customFields, setCustomFields] = useState<RedmineCustomField[]>([]);
+  const [categories, setCategories] = useState<RedmineIssueCategory[]>([]);
   const [memberships, setMemberships] = useState<RedmineMembership[]>([]);
   const [versions, setVersions] = useState<RedmineVersion[]>([]);
   const [timeEntries, setTimeEntries] = useState<RedmineTimeEntry[]>([]);
@@ -85,13 +91,14 @@ export default function App() {
   });
 
   const config = getStoredConfig();
+  const fetchRequestIdRef = useRef<number>(0);
 
-  // Initial load
+  // Initial load of global Redmine metadata
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [user, projs, sts, trk, pri] = await Promise.all([
+      const [user, projs, sts, trk, pri, cfs] = await Promise.all([
         getCurrentUser().catch((e) => {
           console.error(e);
           return null;
@@ -100,19 +107,24 @@ export default function App() {
         getStatuses().catch(() => []),
         getTrackers().catch(() => []),
         getPriorities().catch(() => []),
+        getCustomFields().catch(() => []),
       ]);
 
       if (user) setCurrentUser(user);
+      if (sts && sts.length > 0) setStatuses(sts);
+      if (trk && trk.length > 0) setTrackers(trk);
+      if (pri && pri.length > 0) setPriorities(pri);
+      if (cfs && cfs.length > 0) setCustomFields(cfs);
+
       if (projs.length > 0) {
         setProjects(projs);
-        // Default to Hawee BIM if exists, else first project
         const hawee = projs.find((p) => p.name.includes('HAWEE BIM'));
-        if (hawee) setSelectedProjectId(String(hawee.id));
-        else setSelectedProjectId(String(projs[0].id));
+        if (hawee) {
+          setSelectedProjectId(String(hawee.id));
+        } else {
+          setSelectedProjectId(String(projs[0].id));
+        }
       }
-      setStatuses(sts);
-      setTrackers(trk);
-      setPriorities(pri);
     } catch (err: any) {
       setError(err.message || 'Không thể kết nối đến máy chủ Redmine');
     } finally {
@@ -124,9 +136,10 @@ export default function App() {
     loadInitialData();
   }, [loadInitialData]);
 
-  // Load project-specific data (issues, members, versions, time entries)
+  // Load project-specific data (issues, members, versions, categories, time entries)
   const loadProjectData = useCallback(
-    async (projId: string, currentFilters: FilterState = filters) => {
+    async (projId: string, currentFilters: FilterState) => {
+      const currentRequestId = ++fetchRequestIdRef.current;
       setIsLoading(true);
       setError(null);
       setFetchProgress(null);
@@ -144,42 +157,54 @@ export default function App() {
 
         const maxTotalNum = currentFilters.fetchLimit === 'all' ? 5000 : currentFilters.fetchLimit;
 
-        const [issuesRes, mems, vers, times] = await Promise.all([
+        const [issuesRes, mems, vers, cats, times] = await Promise.all([
           fetchAllIssues(
             {
               project_id: projId === 'all' ? undefined : projId,
               status_id: '*',
               ...dateQuery,
             },
-            (prog: FetchProgress) => setFetchProgress(prog),
+            (prog: FetchProgress) => {
+              if (fetchRequestIdRef.current === currentRequestId) {
+                setFetchProgress(prog);
+              }
+            },
             maxTotalNum
           ),
           getMemberships(projId).catch(() => []),
           getVersions(projId).catch(() => []),
+          getIssueCategories(projId).catch(() => []),
           getTimeEntries(projId).catch(() => []),
         ]);
 
-        setIssues(issuesRes.issues);
-        setTotalAvailableCount(issuesRes.total_count);
-        setMemberships(mems);
-        setVersions(vers);
-        setTimeEntries(times);
+        if (fetchRequestIdRef.current === currentRequestId) {
+          setIssues(issuesRes.issues);
+          setTotalAvailableCount(issuesRes.total_count);
+          setMemberships(mems);
+          setVersions(vers);
+          setCategories(cats);
+          setTimeEntries(times);
+        }
       } catch (err: any) {
-        setError(err.message || 'Lỗi khi tải dữ liệu công việc từ Redmine');
+        if (fetchRequestIdRef.current === currentRequestId) {
+          setError(err.message || 'Lỗi khi tải dữ liệu công việc từ Redmine');
+        }
       } finally {
-        setIsLoading(false);
-        setFetchProgress(null);
+        if (fetchRequestIdRef.current === currentRequestId) {
+          setIsLoading(false);
+          setFetchProgress(null);
+        }
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filters.timePeriod, filters.dateField, filters.specificMonth, filters.customStart, filters.customEnd, filters.fetchLimit]
+    []
   );
 
-  // Trigger fetch when project or time filters change
+  // Trigger server fetch ONLY when project or server-side date/limit filters change
   useEffect(() => {
     if (selectedProjectId) {
       loadProjectData(selectedProjectId, filters);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedProjectId,
     filters.timePeriod,
@@ -188,7 +213,6 @@ export default function App() {
     filters.customStart,
     filters.customEnd,
     filters.fetchLimit,
-    loadProjectData,
   ]);
 
   // Handle quick status change on Kanban or Table
@@ -218,7 +242,7 @@ export default function App() {
     }
   };
 
-  // Filter issues client-side for smooth real-time response
+  // Filter issues client-side for ultra-fast, smooth, zero-reload response
   const filteredIssues = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
 
@@ -413,6 +437,8 @@ export default function App() {
           defaultProjectId={selectedProjectId}
           trackers={trackers}
           priorities={priorities}
+          customFields={customFields}
+          categories={categories}
           memberships={memberships}
           versions={versions}
           onClose={() => setShowCreateModal(false)}
