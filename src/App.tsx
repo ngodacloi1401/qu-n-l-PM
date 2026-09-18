@@ -55,6 +55,7 @@ export default function App() {
   const [statuses, setStatuses] = useState<RedmineStatus[]>([]);
   const [trackers, setTrackers] = useState<RedmineTracker[]>([]);
   const [priorities, setPriorities] = useState<RedminePriority[]>([]);
+  const [snapshotAt, setSnapshotAt] = useState(0);
   const [customFields, setCustomFields] = useState<RedmineCustomField[]>([]);
   const [categories, setCategories] = useState<RedmineIssueCategory[]>([]);
   const [memberships, setMemberships] = useState<RedmineMembership[]>([]);
@@ -140,11 +141,12 @@ export default function App() {
 
   // Load project-specific data (issues, members, versions, categories, time entries)
   const loadProjectData = useCallback(
-    async (projId: string, currentFilters: FilterState) => {
+    async (projId: string, currentFilters: FilterState, force = false) => {
       const currentRequestId = ++fetchRequestIdRef.current;
       setIsLoading(true);
       setError(null);
       setFetchProgress(null);
+      setSnapshotAt(0);
 
       try {
         const dateQuery = getDateFilterQuery(
@@ -157,7 +159,7 @@ export default function App() {
           }
         );
 
-        const maxTotalNum = currentFilters.fetchLimit === 'all' ? 5000 : currentFilters.fetchLimit;
+        const maxTotalNum = currentFilters.fetchLimit === 'all' ? Number.MAX_SAFE_INTEGER : currentFilters.fetchLimit;
 
         const [issuesRes, mems, vers, cats, times] = await Promise.all([
           fetchAllIssues(
@@ -171,7 +173,14 @@ export default function App() {
                 setFetchProgress(prog);
               }
             },
-            maxTotalNum
+            maxTotalNum,
+            { force, onCached: snapshot => {
+              if (fetchRequestIdRef.current === currentRequestId) {
+                setIssues(snapshot.issues.slice(0, maxTotalNum));
+                setTotalAvailableCount(snapshot.total_count);
+                setSnapshotAt(snapshot.fetchedAt);
+              }
+            } }
           ),
           getMemberships(projId).catch(() => []),
           getVersions(projId).catch(() => []),
@@ -182,6 +191,7 @@ export default function App() {
         if (fetchRequestIdRef.current === currentRequestId) {
           setIssues(issuesRes.issues);
           setTotalAvailableCount(issuesRes.total_count);
+          setSnapshotAt(issuesRes.fetchedAt);
           setMemberships(mems);
           setVersions(vers);
           setCategories(cats);
@@ -320,7 +330,7 @@ export default function App() {
         onSelectProject={(id) => setSelectedProjectId(id)}
         activeView={activeView}
         onSelectView={(v) => setActiveView(v)}
-        onRefresh={() => loadProjectData(selectedProjectId, filters)}
+        onRefresh={() => loadProjectData(selectedProjectId, filters, true)}
         isLoading={isLoading}
         onOpenCreate={() => setShowCreateModal(true)}
         onOpenSettings={() => setShowSettingsModal(true)}
@@ -347,13 +357,22 @@ export default function App() {
         )}
 
         {/* Filters bar: shown for Kanban, List, and Analytics */}
+        {!!snapshotAt && (activeView === 'kanban' || activeView === 'list') && <div className="mb-3 flex flex-wrap justify-between gap-2 text-xs text-slate-500">
+          <span>Dữ liệu lưu trên trình duyệt: {issues.length}/{totalAvailableCount} công việc · {new Date(snapshotAt).toLocaleString('vi-VN')}{isLoading ? ' · Đang đồng bộ…' : ''}</span>
+          <button className="text-indigo-600 underline" onClick={() => {
+            const blob = new Blob([JSON.stringify({ schemaVersion: 1, projectId: selectedProjectId, snapshotAt: new Date(snapshotAt).toISOString(), loadedCount: issues.length, totalAvailableCount, issues }, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a'); link.href = url; link.download = `redmine-issues-${selectedProjectId}.json`;
+            document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+          }}>Xuất dữ liệu đã tải (JSON)</button>
+        </div>}
         {(activeView === 'kanban' || activeView === 'list') && (
           <FilterBar
             filters={filters}
             onFilterChange={setFilters}
             trackers={trackers}
             statuses={statuses}
-            priorities={priorities}
+            priorities={[...new Map([...priorities, ...issues.map(i => i.priority)].map(p => [p.id, p])).values()]}
             memberships={memberships}
             versions={versions}
             currentUserId={currentUser?.id}
@@ -364,9 +383,8 @@ export default function App() {
             onFetchAll={() => {
               const updatedFilters: FilterState = { ...filters, fetchLimit: 'all' };
               setFilters(updatedFilters);
-              loadProjectData(selectedProjectId, updatedFilters);
             }}
-            onRefresh={() => loadProjectData(selectedProjectId, filters)}
+            onRefresh={() => loadProjectData(selectedProjectId, filters, true)}
           />
         )}
 

@@ -96,7 +96,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({
       await updateIssue(issue.id, {
         status_id: statusId,
         done_ratio: doneRatio,
-        priority_id: priorityId,
+        priority_id: priorityId === issue.priority.id ? undefined : priorityId,
         assigned_to_id: assigneeId,
         due_date: dueDate || undefined,
         estimated_hours: estimatedHours,
@@ -209,6 +209,7 @@ export const IssueDetailModal: React.FC<IssueDetailModalProps> = ({
                   onChange={(e) => setPriorityId(Number(e.target.value))}
                   className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500"
                 >
+                  {!priorities.some(pr => pr.id === issue.priority.id) && <option value={issue.priority.id}>{issue.priority.name} (ưu tiên hiện tại)</option>}
                   {priorities.map((pr) => (
                     <option key={pr.id} value={pr.id}>
                       {pr.name}

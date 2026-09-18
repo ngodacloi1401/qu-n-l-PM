@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, RefreshCw } from 'lucide-react';
-import { fetchReportTimeEntries, getIssueDetail } from '../services/redmineApi';
-import { downloadOTExcel, isOTSubject, summarizeOT, OTRecord } from '../services/otReport';
+import { fetchOTReport } from '../services/redmineApi';
+import { downloadOTExcel, summarizeOT, OTRecord } from '../services/otReport';
 import type { RedmineIssue } from '../types/redmine';
 
 export function OTReportView({ projectId, projectName, baseUrl, onSelectIssue }: { projectId: string; projectName: string; baseUrl: string; onSelectIssue: (issue: RedmineIssue) => void }) {
@@ -10,6 +10,9 @@ export function OTReportView({ projectId, projectName, baseUrl, onSelectIssue }:
   const [to, setTo] = useState(today);
   const [records, setRecords] = useState<OTRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [savedAt, setSavedAt] = useState(0);
+  const forceNext = useRef(false);
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState('');
@@ -22,26 +25,18 @@ export function OTReportView({ projectId, projectName, baseUrl, onSelectIssue }:
     const id = ++request.current;
     let cancelled = false;
     const current = () => !cancelled && id === request.current;
-    setRecords([]); setError(''); setLoading(true); setProgress('Đang tải toàn bộ nhật ký giờ công…');
-    if (!from || !to || from > to) { setError('Chọn khoảng ngày hợp lệ.'); setLoading(false); return; }
+    setRecords([]); setSavedAt(0); setError(''); setLoading(true); setProgress('Đang tìm issue OT và tải giờ công…');
+    if (!from || !to || from > to) { setError('Chọn khoảng ngày hợp lệ.'); setLoading(false); setSyncing(false); return; }
+    const force = forceNext.current; forceNext.current = false;
+    setSyncing(true);
     (async () => {
-      const entries = await fetchReportTimeEntries(projectId, from, to);
-      const ids = [...new Set(entries.flatMap(e => e.issue ? [e.issue.id] : []))];
-      const issues = new Map<number, RedmineIssue>();
-      for (let offset = 0; offset < ids.length; offset += 6) {
-        if (!current()) return;
-        const batch = await Promise.all(ids.slice(offset, offset + 6).map(getIssueDetail));
-        batch.forEach(i => issues.set(i.id, i));
-        if (current()) setProgress(`Đã kiểm tra subject ${issues.size}/${ids.length} issue…`);
-      }
-      const ot = entries.flatMap(entry => {
-        const issue = entry.issue ? issues.get(entry.issue.id) : undefined;
-        return issue && isOTSubject(issue.subject) ? [{ entry, issue }] : [];
-      });
-      summarizeOT(ot); // Validate logged hours before making a report available.
-      if (current()) setRecords(ot);
+      const report = await fetchOTReport(projectId, from, to, { force, onCached: (rows, timestamp) => {
+        if (current()) { setRecords(rows); setSavedAt(timestamp); setLoading(false); }
+      } });
+      summarizeOT(report.records);
+      if (current()) { setRecords(report.records); setSavedAt(report.fetchedAt); }
     })().catch(e => { if (current()) setError(e.message || 'Không thể tải báo cáo OT.'); })
-      .finally(() => { if (current()) { setLoading(false); setProgress(''); } });
+      .finally(() => { if (current()) { setLoading(false); setSyncing(false); setProgress(''); } });
     return () => { cancelled = true; };
   }, [projectId, from, to, reload, baseUrl]);
 
@@ -60,10 +55,11 @@ export function OTReportView({ projectId, projectName, baseUrl, onSelectIssue }:
   return <div className="space-y-5">
     <div className="flex flex-wrap justify-between gap-4">
       <div><h2 className="font-bold text-lg text-slate-900">Tổng hợp OT</h2><p className="text-sm text-slate-500">Giờ đã log vào issue có từ “OT” trong subject, gồm cả issue đã đóng.</p></div>
-      <div className="flex gap-2"><button onClick={() => setReload(n => n + 1)} disabled={loading} className={input}><RefreshCw className="w-4 h-4 inline mr-2" />Tải lại</button><button onClick={exportExcel} disabled={loading || !!error || exporting || !filtered.length} className="bg-emerald-600 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"><Download className="w-4 h-4 inline mr-2" />{exporting ? 'Đang xuất…' : 'Xuất Excel'}</button></div>
+      <div className="flex gap-2"><button onClick={() => { forceNext.current = true; setReload(n => n + 1); }} disabled={loading || syncing} className={input}><RefreshCw className="w-4 h-4 inline mr-2" />Tải lại</button><button onClick={exportExcel} disabled={loading || syncing || !!error || exporting || !filtered.length} className="bg-emerald-600 text-white rounded-lg px-4 py-2 text-sm disabled:opacity-40"><Download className="w-4 h-4 inline mr-2" />{exporting ? 'Đang xuất…' : 'Xuất Excel'}</button></div>
     </div>
     <div className="flex flex-wrap items-end gap-3"><label className="text-xs text-slate-600">Từ ngày<input aria-label="OT từ ngày" type="date" value={from} onChange={e => setFrom(e.target.value)} className={`${input} block mt-1`} /></label><label className="text-xs text-slate-600">Đến ngày<input aria-label="OT đến ngày" type="date" value={to} onChange={e => setTo(e.target.value)} className={`${input} block mt-1`} /></label><select aria-label="Thành viên OT" value={userId} onChange={e => setUserId(e.target.value)} className={input}><option value="all">Tất cả thành viên</option>{users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select><select aria-label="Tracker OT" value={trackerId} onChange={e => setTrackerId(e.target.value)} className={input}><option value="all">Tất cả tracker</option>{trackers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
     {error && <p role="alert" className="bg-rose-50 text-rose-700 p-4 rounded-lg">{error}</p>}
+    {!!savedAt && <p className="text-xs text-slate-500">Dữ liệu lưu trên trình duyệt lúc {new Date(savedAt).toLocaleString('vi-VN')}.{syncing ? ' Đang đồng bộ với Redmine…' : ' Tải lại để kiểm tra cập nhật ngay.'}</p>}
     {loading ? <p role="status" className="p-8 text-center text-slate-500">{progress}</p> : !error && <>
       <div className="grid sm:grid-cols-3 gap-4">{[['Tổng giờ OT', `${total.toFixed(2)} giờ`], ['Thành viên OT', new Set(filtered.map(r => r.entry.user.id)).size], ['Issue OT có log', new Set(filtered.map(r => r.issue.id)).size]].map(([label, value]) => <div key={label} className="bg-white border border-slate-200 rounded-xl p-4"><p className="text-sm text-slate-500">{label}</p><p className="text-2xl font-bold mt-1">{value}</p></div>)}</div>
       {!filtered.length ? <p className="p-8 bg-white rounded-xl text-center text-slate-500">Không có giờ OT đã log trong phạm vi đã chọn.</p> : <>

@@ -17,6 +17,9 @@ import {
 
 import { buildAIReportPayload, readAIReportResponse } from './aiPayload';
 import { readIssueListResponse } from './issueResponse';
+import { cacheScope, cacheRevision, invalidateAfterMutation, readLocalCache, writeLocalCache } from './localCache';
+import { loadIssueSnapshot, issueQueryKey, IssueCacheOptions, IssueSnapshot } from './issueCache';
+import { isOTSubject, OTRecord } from './otReport';
 
 const STORAGE_KEY_URL = 'redmine_pm_base_url';
 const STORAGE_KEY_API_KEY = 'redmine_pm_api_key';
@@ -347,6 +350,7 @@ export interface IssueFilterParams {
   limit?: number;
   offset?: number;
   sort?: string;
+  subject?: string;
 }
 
 export async function getIssues(params: IssueFilterParams = {}): Promise<{ issues: RedmineIssue[]; total_count: number }> {
@@ -367,7 +371,7 @@ export interface FetchProgress {
   isFinished: boolean;
 }
 
-export async function fetchAllIssues(
+async function fetchIssuesFromServer(
   params: IssueFilterParams = {},
   onProgress?: (progress: FetchProgress) => void,
   maxTotal: number = 3500
@@ -444,6 +448,7 @@ export async function createIssue(issuePayload: {
     throw new Error(errorData.errors ? errorData.errors.join(', ') : 'Lỗi khi tạo công việc mới');
   }
   const data = await res.json();
+  invalidateAfterMutation();
   return data.issue;
 }
 
@@ -471,6 +476,7 @@ export async function updateIssue(
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.errors ? errorData.errors.join(', ') : 'Lỗi khi cập nhật công việc');
   }
+  invalidateAfterMutation();
 }
 
 export async function deleteIssue(id: number): Promise<void> {
@@ -479,6 +485,7 @@ export async function deleteIssue(id: number): Promise<void> {
     headers: getHeaders(),
   });
   if (!res.ok) throw new Error('Không thể xóa công việc');
+  invalidateAfterMutation();
 }
 
 export async function getStatuses(): Promise<RedmineStatus[]> {
@@ -572,8 +579,56 @@ export async function getTimeEntries(projectId?: number | string): Promise<Redmi
   return data.time_entries || [];
 }
 
+async function currentCacheScope() {
+  const config = getStoredConfig();
+  return cacheScope(config.baseUrl, config.apiKey);
+}
+
+export async function fetchAllIssues(params: IssueFilterParams = {}, onProgress?: (progress: FetchProgress) => void, maxTotal = 3500, options: IssueCacheOptions = {}) {
+  const key = `${await currentCacheScope()}:issues:${issueQueryKey(params)}`;
+  const previous = await readLocalCache<IssueSnapshot>(key);
+  const incremental = Object.keys(params).every(k => ['project_id', 'status_id'].includes(k)) && params.status_id === '*';
+  const snapshot = await loadIssueSnapshot(key, cacheRevision(), maxTotal, incremental,
+    () => fetchIssuesFromServer(params, onProgress, previous?.complete ? Number.MAX_SAFE_INTEGER : maxTotal),
+    since => fetchIssuesFromServer({ ...params, updated_on: `>=${since}` }, undefined, Number.MAX_SAFE_INTEGER),
+    async () => (await getIssues({ ...params, limit: 1 })).total_count, options);
+  onProgress?.({ loaded: Math.min(snapshot.issues.length, maxTotal), total: snapshot.total_count, isFinished: true });
+  return { issues: snapshot.issues.slice(0, maxTotal), total_count: snapshot.total_count, fetchedAt: snapshot.fetchedAt };
+}
+
+export async function fetchOTReport(projectId: string, from: string, to: string, options: { force?: boolean; onCached?: (records: OTRecord[], fetchedAt: number) => void } = {}) {
+  const scope = await currentCacheScope();
+  const reportKey = `${scope}:ot:${projectId}:${from}:${to}`;
+  const revision = cacheRevision();
+  const cached = await readLocalCache<{ records: OTRecord[]; fetchedAt: number; revision: string }>(reportKey);
+  if (cached) {
+    options.onCached?.(cached.records, cached.fetchedAt);
+    if (!options.force && cached.revision === revision && Date.now() - cached.fetchedAt < 60000) return cached;
+  }
+  const params = { project_id: projectId === 'all' ? undefined : projectId, status_id: '*' };
+  const fullSnapshot = await readLocalCache<IssueSnapshot>(`${scope}:issues:${issueQueryKey(params)}`);
+  // A complete local issue snapshot already contains the OT subjects. Otherwise
+  // ask Redmine for subject matches (hundreds of rows, not the full project).
+  const [result, entries] = await Promise.all([
+    fetchAllIssues(fullSnapshot?.complete ? params : { ...params, subject: '~OT' }, undefined, Number.MAX_SAFE_INTEGER, { force: options.force }),
+    fetchReportTimeEntries(projectId, from, to, options.force),
+  ]);
+  const issues = new Map(result.issues.filter(i => isOTSubject(i.subject)).map(i => [i.id, i]));
+  const records = entries.flatMap(entry => {
+    const issue = entry.issue ? issues.get(entry.issue.id) : undefined;
+    return issue ? [{ entry, issue }] : [];
+  });
+  const report = { records, fetchedAt: Date.now(), revision };
+  await writeLocalCache(reportKey, report);
+  return report;
+}
+
 // Reports must read every page, including entries attached to closed issues.
-export async function fetchReportTimeEntries(projectId: string, from: string, to: string): Promise<RedmineTimeEntry[]> {
+export async function fetchReportTimeEntries(projectId: string, from: string, to: string, force = false): Promise<RedmineTimeEntry[]> {
+  const key = `${await currentCacheScope()}:time:${projectId}:${from}:${to}`;
+  const revision = cacheRevision();
+  const cached = await readLocalCache<{ entries: RedmineTimeEntry[]; fetchedAt: number; revision: string }>(key);
+  if (!force && cached?.revision === revision && Date.now() - cached.fetchedAt < 60000) return cached.entries;
   const entries = new Map<number, RedmineTimeEntry>();
   let offset = 0;
   while (true) {
@@ -588,7 +643,9 @@ export async function fetchReportTimeEntries(projectId: string, from: string, to
     if (offset >= data.total_count) break;
     if (!page.length) throw new Error('Redmine trả về dữ liệu giờ công chưa đầy đủ. Hãy tải lại.');
   }
-  return [...entries.values()];
+  const result = [...entries.values()];
+  await writeLocalCache(key, { entries: result, fetchedAt: Date.now(), revision });
+  return result;
 }
 
 export async function logTimeEntry(entry: {
@@ -608,6 +665,7 @@ export async function logTimeEntry(entry: {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.errors ? err.errors.join(', ') : 'Lỗi khi ghi nhận giờ làm');
   }
+  invalidateAfterMutation();
 }
 
 export interface AIModelOption {

@@ -1,11 +1,42 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createOTWorkbook, isOTSubject, summarizeOT, OTRecord } from './otReport';
-import { fetchReportTimeEntries } from './redmineApi';
+import { fetchOTReport, fetchReportTimeEntries } from './redmineApi';
 
 const record = (id: number, hours: number, userId = 1, projectId = 84): OTRecord => ({
   entry: { id, hours, user: { id: userId, name: 'Thành viên' }, project: { id: projectId, name: 'Dự án' }, issue: { id: 100 }, activity: { id: 3, name: 'Development' }, spent_on: '2026-09-18', created_on: '', updated_on: '', comments: '=SUM(A1:A2)' },
   issue: { id: 100, subject: '[OT] Kiểm thử', project: { id: projectId, name: 'Dự án' }, tracker: { id: 4, name: 'Task' }, status: { id: 5, name: 'Closed' }, priority: { id: 1, name: 'Normal' }, author: { id: 1, name: 'Thành viên' }, done_ratio: 100, created_on: '', updated_on: '' },
+});
+
+test('OT report searches subjects without fetching individual issue details and reuses cache', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalStorage = globalThis.localStorage;
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => null } });
+  let calls = 0;
+  globalThis.fetch = async input => {
+    calls++;
+    const url = new URL(String(input), 'http://localhost');
+    if (url.pathname === '/api/redmine/issues') {
+      assert.equal(url.searchParams.get('subject'), '~OT');
+      const ot = record(1, 2).issue;
+      return new Response(JSON.stringify({ issues: [ot, { ...ot, id: 101, subject: 'HOTFIX' }], total_count: 2 }));
+    }
+    assert.equal(url.pathname, '/api/redmine/time_entries');
+    return new Response(JSON.stringify({ time_entries: [record(1, 2).entry, { ...record(2, 9).entry, issue: { id: 101 } }], total_count: 2 }));
+  };
+  try {
+    const result = await fetchOTReport('84', '2026-08-01', '2026-08-31');
+    assert.equal(result.records.length, 1);
+    assert.equal(summarizeOT(result.records)[0].hours, 2);
+    assert.equal(calls, 2);
+    await fetchOTReport('84', '2026-08-01', '2026-08-31');
+    assert.equal(calls, 2);
+    await fetchOTReport('84', '2026-08-01', '2026-08-31', { force: true });
+    assert.equal(calls, 4);
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: originalStorage });
+  }
 });
 
 test('recognizes the OT word in actual Redmine subject styles', () => {
