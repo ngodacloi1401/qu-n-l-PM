@@ -13,7 +13,7 @@ export async function readIssueListResponse(res: Response) {
       503: 'Dịch vụ công việc tạm thời không khả dụng (HTTP 503).',
       504: 'Tải công việc vượt thời gian chờ (HTTP 504). Hãy thử lại.',
     };
-    throw new Error(messages[res.status] || `Lỗi khi tải danh sách công việc (HTTP ${res.status}).`);
+    throw Object.assign(new Error(messages[res.status] || `Lỗi khi tải danh sách công việc (HTTP ${res.status}).`), { status: res.status });
   }
   if (!Array.isArray(data?.issues) || !Number.isInteger(data?.total_count) || data.total_count < 0) {
     throw new Error('API công việc trả về dữ liệu không hợp lệ. Kiểm tra bản triển khai máy chủ.');

@@ -27,8 +27,22 @@ export async function loadIssueSnapshot(key: string, revision: string, maxTotal:
     if (canIncrement && cached?.complete && Date.now() - Date.parse(cached.syncStartedAt) < 24 * 60 * 60 * 1000) {
       // Overlap the last sync by two minutes to include updates made while a page
       // was downloading and differences between client/server clocks.
-      const since = new Date(Date.parse(cached.syncStartedAt) - 120000).toISOString();
-      const [changes, total] = await Promise.all([delta(since), count()]);
+      // Redmine date filters reject ISO timestamps containing milliseconds.
+      // Reload the entire calendar day to keep updates within the overlap.
+      const since = new Date(Date.parse(cached.syncStartedAt) - 120000).toISOString().slice(0, 10);
+      let changes: { issues: RedmineIssue[]; total_count: number };
+      let total: number;
+      try { [changes, total] = await Promise.all([delta(since), count()]); }
+      catch (error: any) {
+        if (error?.status !== 422) throw error;
+        const fresh = await full();
+        changes = fresh;
+        total = fresh.total_count;
+        // Discard the old cache if a filter is unsupported by this Redmine.
+        const refreshed = { issues: fresh.issues, total_count: total, complete: fresh.issues.length === total, fetchedAt: Date.now(), syncStartedAt, revision };
+        await writeLocalCache(key, refreshed);
+        return refreshed;
+      }
       const merged = new Map(cached.issues.map(i => [i.id, i]));
       changes.issues.forEach(i => merged.set(i.id, i));
       // Deletions / loss of visibility require a fresh authoritative snapshot.

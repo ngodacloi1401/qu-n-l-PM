@@ -20,12 +20,22 @@ test('fresh complete cache serves partial views without network', async () => {
 test('stale complete cache merges only changed issues, replacing duplicates', async () => {
   await writeLocalCache('delta', snapshot([issue(1), issue(2)]));
   const result = await loadIssueSnapshot('delta', 'v1', 5000, true, unexpected, async since => {
+    assert.match(since, /^\d{4}-\d{2}-\d{2}$/);
     assert.ok(Date.parse(since) < Date.now() - 100000);
     return { issues: [issue(1, '[OT] Changed'), issue(3)], total_count: 2 };
   }, async () => 3);
   assert.equal(result.complete, true);
   assert.equal(result.issues.length, 3);
   assert.equal(result.issues.find(i => i.id === 1)?.subject, '[OT] Changed');
+});
+
+test('unsupported incremental filters reload issues instead of losing the list', async () => {
+  await writeLocalCache('unsupported', snapshot([issue(1), issue(2)]));
+  const result = await loadIssueSnapshot('unsupported', 'v1', 5000, true,
+    async () => ({ issues: [issue(2)], total_count: 1 }),
+    async () => { throw Object.assign(new Error('Updated is invalid'), { status: 422 }); }, async () => 1);
+  assert.deepEqual(result.issues.map(i => i.id), [2]);
+  assert.equal(result.complete, true);
 });
 
 test('deleted issues force authoritative reload', async () => {

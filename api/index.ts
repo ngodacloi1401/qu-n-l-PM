@@ -111,6 +111,11 @@ app.get('/api/redmine/issues', async (req: Request, res: Response) => {
       ...req.query,
     };
 
+    // Keep cached clients using ISO cursors compatible with Redmine date filters.
+    if (typeof params.updated_on === 'string') {
+      params.updated_on = params.updated_on.replace(/^(>=|<=|=|>|<)?(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/, '$1$2');
+    }
+
     for (const key of Object.keys(params)) {
       if (params[key] === 'all' || params[key] === undefined || params[key] === '') {
         delete params[key];
