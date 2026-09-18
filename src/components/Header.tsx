@@ -8,7 +8,6 @@ import {
   Plus,
   RefreshCw,
   Settings,
-  GitBranch,
   ExternalLink,
   Building2,
 } from 'lucide-react';
@@ -25,7 +24,6 @@ interface HeaderProps {
   isLoading: boolean;
   onOpenCreate: () => void;
   onOpenSettings: () => void;
-  onOpenDeploy: () => void;
   baseUrl: string;
 }
 
@@ -40,7 +38,6 @@ export const Header: React.FC<HeaderProps> = ({
   isLoading,
   onOpenCreate,
   onOpenSettings,
-  onOpenDeploy,
   baseUrl,
 }) => {
   const selectedProject = projects.find((p) => String(p.id) === selectedProjectId);
@@ -115,15 +112,6 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {/* GitHub & Vercel Deploy info */}
-            <button
-              id="btn-deploy-guide"
-              onClick={onOpenDeploy}
-              title="Hướng dẫn Deploy Vercel & GitHub"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors cursor-pointer"
-            >
-              <GitBranch className="w-3.5 h-3.5 text-slate-600" />
-              <span className="hidden lg:inline">GitHub / Vercel</span>
-            </button>
 
             {/* Settings Modal Toggle */}
             <button

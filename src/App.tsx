@@ -41,7 +41,6 @@ import { AICopilotView } from './components/AICopilotView';
 import { IssueDetailModal } from './components/IssueDetailModal';
 import { CreateIssueModal } from './components/CreateIssueModal';
 import { SettingsModal } from './components/SettingsModal';
-import { DeployModal } from './components/DeployModal';
 import { AlertCircle, RefreshCw, Layers } from 'lucide-react';
 import { isIssueClosed, vietnamToday } from './services/pmAnalytics';
 
@@ -70,7 +69,6 @@ export default function App() {
   const [selectedIssueForModal, setSelectedIssueForModal] = useState<RedmineIssue | null>(null);
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
-  const [showDeployModal, setShowDeployModal] = useState<boolean>(false);
 
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -334,7 +332,6 @@ export default function App() {
         isLoading={isLoading}
         onOpenCreate={() => setShowCreateModal(true)}
         onOpenSettings={() => setShowSettingsModal(true)}
-        onOpenDeploy={() => setShowDeployModal(true)}
         baseUrl={config.baseUrl}
       />
 
@@ -488,9 +485,6 @@ export default function App() {
         />
       )}
 
-      {showDeployModal && (
-        <DeployModal onClose={() => setShowDeployModal(false)} />
-      )}
     </div>
   );
 }
