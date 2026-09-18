@@ -63,7 +63,6 @@ export async function createOTWorkbook(records: OTRecord[], summary: OTSummary[]
     });
   }
   overview.getCell('A1').font = { name: 'Arial', size: 14, bold: true };
-  overview.getColumn(2).width = 76;
   return workbook;
 }
 
@@ -74,6 +73,9 @@ export async function downloadOTExcel(records: OTRecord[], summary: OTSummary[],
   const link = document.createElement('a');
   link.href = url;
   link.download = `OT_${context.from}_${context.to}.xlsx`;
+  link.style.display = 'none';
+  document.body.appendChild(link);
   link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
