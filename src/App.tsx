@@ -36,6 +36,8 @@ import { KanbanBoard } from './components/KanbanBoard';
 import { TableView } from './components/TableView';
 import { DashboardAnalytics } from './components/DashboardAnalytics';
 import { TimeTrackingView } from './components/TimeTrackingView';
+import { OTReportView } from './components/OTReportView';
+import { TrackerExplorer } from './components/TrackerExplorer';
 import { AICopilotView } from './components/AICopilotView';
 import { IssueDetailModal } from './components/IssueDetailModal';
 import { CreateIssueModal } from './components/CreateIssueModal';
@@ -87,7 +89,7 @@ export default function App() {
     specificMonth: defaultMonth,
     customStart: '',
     customEnd: '',
-    fetchLimit: 500,
+    fetchLimit: 100,
   });
 
   const config = getStoredConfig();
@@ -408,6 +410,14 @@ export default function App() {
             selectedProject={selectedProject}
             onRefresh={() => loadProjectData(selectedProjectId, filters)}
           />
+        )}
+
+        {activeView === 'ot' && (
+          <OTReportView key={`${selectedProjectId}:${config.baseUrl}:${config.apiKey}`} projectId={selectedProjectId} projectName={selectedProject?.name || 'Tất cả dự án'} baseUrl={config.baseUrl} onSelectIssue={setSelectedIssueForModal} />
+        )}
+
+        {activeView === 'trackers' && (
+          <TrackerExplorer key={`${selectedProjectId}:${config.baseUrl}:${config.apiKey}`} trackers={trackers} projectId={selectedProjectId} baseUrl={config.baseUrl} onSelectIssue={setSelectedIssueForModal} />
         )}
 
         {activeView === 'ai' && (

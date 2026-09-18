@@ -9,10 +9,13 @@ import {
   RefreshCw,
   RotateCcw,
   ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 import {
   getStoredConfig,
   saveStoredConfig,
+  getStoredGeminiKey,
+  saveStoredGeminiKey,
   DEFAULT_REDMINE_URL,
   DEFAULT_REDMINE_KEY,
 } from '../services/redmineApi';
@@ -26,6 +29,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
   const currentConfig = getStoredConfig();
   const [baseUrl, setBaseUrl] = useState(currentConfig.baseUrl);
   const [apiKey, setApiKey] = useState(currentConfig.apiKey);
+  const [geminiKey, setGeminiKey] = useState(getStoredGeminiKey());
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -70,6 +74,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
       baseUrl: baseUrl.trim().replace(/\/+$/, ''),
       apiKey: apiKey.trim(),
     });
+    saveStoredGeminiKey(geminiKey.trim());
     onSaved();
     onClose();
   };
@@ -89,8 +94,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
               <Settings className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">Cấu hình kết nối Redmine</h3>
-              <p className="text-xs text-slate-500">Quản lý API Key & Máy chủ Redmine của bạn</p>
+              <h3 className="text-base font-bold text-slate-900">Cài đặt kết nối & AI Copilot</h3>
+              <p className="text-xs text-slate-500">Cấu hình Redmine API & Khóa Gemini AI</p>
             </div>
           </div>
 
@@ -135,7 +140,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
             />
           </div>
 
-          {/* API Key */}
+          {/* Redmine API Key */}
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
@@ -153,14 +158,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
               </a>
             </div>
             <input
-              type="text"
+              type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="440da87a37415860..."
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500"
             />
+          </div>
+
+          {/* Gemini API Key */}
+          <div className="pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Google Gemini API Key (Báo cáo AI)</span>
+              </label>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-indigo-600 hover:underline flex items-center gap-0.5"
+              >
+                <span>Lấy key miễn phí</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+            <input
+              type="password"
+              value={geminiKey}
+              onChange={(e) => setGeminiKey(e.target.value)}
+              placeholder="AIzaSy... (Khóa API Gemini)"
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500"
+            />
             <p className="text-[11px] text-slate-400 mt-1">
-              API key được lưu an toàn trong trình duyệt hoặc thiết lập qua biến môi trường.
+              Cần thiết để chạy các tính năng AI Copilot (Báo cáo Standup, Phân tích rủi ro PM).
             </p>
           </div>
 
@@ -173,7 +204,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin' : ''}`} />
-              <span>{testing ? 'Đang kiểm tra...' : 'Kiểm tra kết nối'}</span>
+              <span>{testing ? 'Đang kiểm tra...' : 'Kiểm tra kết nối Redmine'}</span>
             </button>
 
             <button

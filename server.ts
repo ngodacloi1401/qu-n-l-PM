@@ -278,8 +278,8 @@ app.get('/api/redmine/issue_categories', async (req: Request, res: Response) => 
 // Time entries
 app.get('/api/redmine/time_entries', async (req: Request, res: Response) => {
   try {
-    const { project_id, limit = '100' } = req.query;
-    const params: Record<string, any> = { limit };
+    const { project_id, limit = '100', offset = '0', from, to, sort } = req.query;
+    const params: Record<string, any> = { limit, offset, from, to, sort };
     if (project_id && project_id !== 'all') params.project_id = project_id;
 
     const result = await fetchRedmine(req, '/time_entries.json', { params });
@@ -305,14 +305,19 @@ app.post('/api/redmine/time_entries', async (req: Request, res: Response) => {
 // -------------------------------------------------------------
 // Gemini AI PM Copilot Route
 // -------------------------------------------------------------
-let aiClient: GoogleGenAI | null = null;
-function getAIClient() {
-  if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
+app.post('/api/gemini/pm-insights', async (req: Request, res: Response) => {
+  try {
+    const { mode, projectName, issues, statistics, model } = req.body;
+    const clientKey = (req.headers['x-gemini-api-key'] as string | undefined)?.trim();
+    const apiKey = clientKey || process.env.GEMINI_API_KEY;
+
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not configured');
+      return res.status(400).json({
+        error: 'Chưa cấu hình GEMINI_API_KEY. Vui lòng bấm vào biểu tượng Cài đặt (⚙️) ở góc trên bên phải màn hình để nhập Gemini API Key của bạn.',
+      });
     }
-    aiClient = new GoogleGenAI({
+
+    const ai = new GoogleGenAI({
       apiKey,
       httpOptions: {
         headers: {
@@ -320,13 +325,7 @@ function getAIClient() {
         },
       },
     });
-  }
-  return aiClient;
-}
 
-app.post('/api/gemini/pm-insights', async (req: Request, res: Response) => {
-  try {
-    const { mode, projectName, issues, statistics, model } = req.body;
     console.log('[AI Route] Received request:', { mode, projectName, model: model || 'default' });
 
     let prompt = '';
@@ -361,16 +360,14 @@ ${JSON.stringify({ statistics, sampleIssues: issues?.slice(0, 20) })}
 Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việc cụ thể, thực tế cho PM quản lý dự án trên Redmine bằng Tiếng Việt.`;
     }
 
-    const ai = getAIClient();
-    const primaryModel = (typeof model === 'string' && model.trim()) ? model.trim() : 'gemini-3.1-flash-lite';
+    const primaryModel = (typeof model === 'string' && model.trim()) ? model.trim() : 'gemini-2.5-flash';
 
     // Fallback chain in case of model spike / 503 high demand / availability issues
     const candidateModels: string[] = [primaryModel];
-    if (!candidateModels.includes('gemini-3.1-flash-lite')) {
-      candidateModels.push('gemini-3.1-flash-lite');
-    }
-    if (!candidateModels.includes('gemini-3.6-flash')) {
-      candidateModels.push('gemini-3.6-flash');
+    for (const m of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-pro']) {
+      if (!candidateModels.includes(m)) {
+        candidateModels.push(m);
+      }
     }
 
     let lastError: any = null;
@@ -380,13 +377,12 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
     for (const candidate of candidateModels) {
       try {
         console.log(`[AI Route] Attempting model: ${candidate}`);
-        // 20s timeout per candidate to fail fast if model is unresponsive
         const generatePromise = ai.models.generateContent({
           model: candidate,
           contents: prompt,
         });
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error(`Model ${candidate} timed out after 20s`)), 20000);
+          setTimeout(() => reject(new Error(`Model ${candidate} timed out after 25s`)), 25000);
         });
 
         const response: any = await Promise.race([generatePromise, timeoutPromise]);
@@ -398,12 +394,13 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
         }
       } catch (err: any) {
         lastError = err;
-        console.warn(`[AI Route] Model ${candidate} failed/timed out:`, err.message || err);
+        console.warn(`[AI Route] Model ${candidate} failed:`, err.message || err);
       }
     }
 
     if (!responseText) {
-      throw lastError || new Error('Không thể tạo báo cáo với các model hiện tại');
+      const errMsg = lastError?.message || 'Không thể tạo báo cáo với model hiện tại';
+      return res.status(500).json({ error: errMsg });
     }
 
     return res.json({

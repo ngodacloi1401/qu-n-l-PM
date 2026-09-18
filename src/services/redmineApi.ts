@@ -19,34 +19,182 @@ const STORAGE_KEY_URL = 'redmine_pm_base_url';
 const STORAGE_KEY_API_KEY = 'redmine_pm_api_key';
 
 export const DEFAULT_REDMINE_URL = 'https://redmine.anybim.vn';
-export const DEFAULT_REDMINE_KEY = '485a0bd120e3515ab2442afe570f2a6829a55342';
+export const DEFAULT_REDMINE_KEY = '440da87a37415860ff240080d18ba34b21536eb8';
+
+const STORAGE_KEY_GEMINI_KEY = 'redmine_pm_gemini_api_key';
 
 export const DEFAULT_REDMINE_STATUSES: RedmineStatus[] = [
   { id: 1, name: 'New', is_closed: false },
   { id: 2, name: 'In Progress', is_closed: false },
+  { id: 3, name: 'Resolved', is_closed: false },
   { id: 16, name: 'Ready For QA', is_closed: false },
   { id: 12, name: 'QA testing', is_closed: false },
   { id: 7, name: 'QA Verified', is_closed: false },
   { id: 4, name: 'Failed', is_closed: false },
   { id: 11, name: 'On STG', is_closed: false },
   { id: 9, name: 'On PROD', is_closed: false },
-  { id: 3, name: 'Resolved', is_closed: false },
-  { id: 10, name: 'Client Verified', is_closed: true },
-  { id: 8, name: 'Pending', is_closed: false },
-  { id: 18, name: 'Blocked By', is_closed: false },
-  { id: 17, name: "Can't reproduce", is_closed: false },
   { id: 5, name: 'Closed', is_closed: true },
   { id: 6, name: 'Close-Duplicated', is_closed: true },
+  { id: 18, name: 'Blocked By', is_closed: false },
+  { id: 17, name: "Can't reproduce", is_closed: false },
+  { id: 8, name: 'Pending', is_closed: false },
+  { id: 10, name: 'Client Verified', is_closed: true },
+];
+
+export const DEFAULT_REDMINE_TRACKERS: RedmineTracker[] = [
+  { id: 2, name: 'Epic' },
+  { id: 1, name: 'User Story' },
+  { id: 10, name: 'Enhancement/Improvement' },
+  { id: 7, name: 'Change request' },
+  { id: 8, name: 'Implement' },
+  { id: 4, name: 'Task' },
+  { id: 5, name: 'Test' },
+  { id: 3, name: 'Defect(GapBA)' },
+  { id: 6, name: 'Bug' },
+  { id: 9, name: 'UI Design' },
+  { id: 11, name: 'Ecosystem' },
+  { id: 12, name: 'System' },
+  { id: 13, name: 'Subsystem' },
+  { id: 14, name: 'Cluster' },
+  { id: 15, name: 'Module' },
+  { id: 16, name: 'Feature' },
+  { id: 17, name: 'Function' },
+];
+
+export const DEFAULT_REDMINE_PRIORITIES: RedminePriority[] = [
+  { id: 29, name: 'Must Have', is_default: true },
+  { id: 30, name: 'Should Have', is_default: false },
+  { id: 31, name: 'Could Have', is_default: false },
+  { id: 32, name: "Won't Have", is_default: false },
+];
+
+export const DEFAULT_REDMINE_CUSTOM_FIELDS: RedmineCustomField[] = [
+  {
+    id: 48,
+    name: 'IssueGroup',
+    field_format: 'list',
+    possible_values: ['Chung'],
+    trackers: [
+      { id: 2, name: 'Epic' },
+      { id: 1, name: 'User Story' },
+      { id: 10, name: 'Enhancement/Improvement' },
+      { id: 7, name: 'Change request' },
+      { id: 8, name: 'Implement' },
+      { id: 4, name: 'Task' },
+      { id: 5, name: 'Test' },
+      { id: 6, name: 'Bug' },
+    ],
+  },
+  {
+    id: 43,
+    name: 'ProjectCode',
+    field_format: 'list',
+    possible_values: ['HAWEE_BIM_2026', 'HAWEE_AI_KYTHUAT_2026', 'INERTIA_2026', 'HAWEE_2026'],
+    trackers: [
+      { id: 7, name: 'Change request' },
+      { id: 8, name: 'Implement' },
+      { id: 4, name: 'Task' },
+      { id: 5, name: 'Test' },
+      { id: 6, name: 'Bug' },
+    ],
+  },
+  {
+    id: 24,
+    name: 'Report By',
+    field_format: 'list',
+    possible_values: ['QA/BA', 'Planning', 'PO/PM', 'Customers'],
+    trackers: [
+      { id: 1, name: 'User Story' },
+      { id: 10, name: 'Enhancement/Improvement' },
+      { id: 8, name: 'Implement' },
+      { id: 4, name: 'Task' },
+      { id: 6, name: 'Bug' },
+    ],
+  },
+  {
+    id: 17,
+    name: 'Review',
+    field_format: 'bool',
+    possible_values: ['0', '1'],
+    trackers: [
+      { id: 1, name: 'User Story' },
+      { id: 7, name: 'Change request' },
+      { id: 10, name: 'Enhancement/Improvement' },
+      { id: 4, name: 'Task' },
+      { id: 5, name: 'Test' },
+      { id: 6, name: 'Bug' },
+    ],
+  },
+  {
+    id: 23,
+    name: 'Document/Srs-Urd/Acceptance',
+    field_format: 'bool',
+    possible_values: ['0', '1'],
+    trackers: [
+      { id: 1, name: 'User Story' },
+      { id: 7, name: 'Change request' },
+      { id: 10, name: 'Enhancement/Improvement' },
+    ],
+  },
+  {
+    id: 40,
+    name: 'Code Optimizing',
+    field_format: 'list',
+    possible_values: ['Chưa làm', 'Đã làm'],
+    trackers: [{ id: 4, name: 'Task' }],
+  },
+  {
+    id: 46,
+    name: 'Bugs_step_to_reproduce',
+    field_format: 'list',
+    possible_values: ['Yes', 'No'],
+    trackers: [{ id: 6, name: 'Bug' }],
+  },
+  {
+    id: 45,
+    name: 'Actual/Expect Result',
+    field_format: 'list',
+    possible_values: ['Yes', 'No'],
+    trackers: [{ id: 6, name: 'Bug' }],
+  },
+  {
+    id: 3,
+    name: 'Not bug',
+    field_format: 'bool',
+    possible_values: ['0', '1'],
+    trackers: [{ id: 6, name: 'Bug' }],
+  },
+  {
+    id: 1,
+    name: 'Regression Bug',
+    field_format: 'bool',
+    possible_values: ['0', '1'],
+    trackers: [{ id: 6, name: 'Bug' }],
+  },
+  {
+    id: 47,
+    name: 'Checklist QA-TEST',
+    field_format: 'list',
+    possible_values: ['Yes', 'No'],
+    trackers: [{ id: 5, name: 'Test' }],
+  },
+  {
+    id: 29,
+    name: 'DEV-Testing',
+    field_format: 'string',
+    trackers: [{ id: 8, name: 'Implement' }],
+  },
+  {
+    id: 28,
+    name: 'Checklist DEV-CODE',
+    field_format: 'string',
+    trackers: [{ id: 8, name: 'Implement' }],
+  },
 ];
 
 export function getStoredConfig(): RedmineConfig {
   const url = localStorage.getItem(STORAGE_KEY_URL) || DEFAULT_REDMINE_URL;
-  let key = localStorage.getItem(STORAGE_KEY_API_KEY);
-  // Auto migrate from old key
-  if (!key || key === '440da87a37415860ff240080d18ba34b21536eb8') {
-    key = DEFAULT_REDMINE_KEY;
-    localStorage.setItem(STORAGE_KEY_API_KEY, DEFAULT_REDMINE_KEY);
-  }
+  const key = localStorage.getItem(STORAGE_KEY_API_KEY) || DEFAULT_REDMINE_KEY;
   return { baseUrl: url, apiKey: key };
 }
 
@@ -55,13 +203,26 @@ export function saveStoredConfig(config: RedmineConfig): void {
   localStorage.setItem(STORAGE_KEY_API_KEY, config.apiKey);
 }
 
+export function getStoredGeminiKey(): string {
+  return localStorage.getItem(STORAGE_KEY_GEMINI_KEY) || '';
+}
+
+export function saveStoredGeminiKey(key: string): void {
+  localStorage.setItem(STORAGE_KEY_GEMINI_KEY, key);
+}
+
 function getHeaders(): HeadersInit {
   const cfg = getStoredConfig();
-  return {
+  const geminiKey = getStoredGeminiKey();
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-redmine-url': cfg.baseUrl,
     'x-redmine-api-key': cfg.apiKey,
   };
+  if (geminiKey) {
+    headers['x-gemini-api-key'] = geminiKey;
+  }
+  return headers;
 }
 
 export function formatRedmineDate(d: Date): string {
@@ -323,31 +484,63 @@ export async function deleteIssue(id: number): Promise<void> {
 }
 
 export async function getStatuses(): Promise<RedmineStatus[]> {
-  const res = await fetch('/api/redmine/statuses', { headers: getHeaders() });
-  if (!res.ok) throw new Error('Lỗi khi tải trạng thái');
-  const data = await res.json();
-  return data.issue_statuses || [];
+  try {
+    const res = await fetch('/api/redmine/statuses', { headers: getHeaders() });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.issue_statuses && data.issue_statuses.length > 0) {
+        return data.issue_statuses;
+      }
+    }
+  } catch (err) {
+    console.warn('Cannot fetch statuses from API, using default Redmine statuses:', err);
+  }
+  return DEFAULT_REDMINE_STATUSES;
 }
 
 export async function getTrackers(): Promise<RedmineTracker[]> {
-  const res = await fetch('/api/redmine/trackers', { headers: getHeaders() });
-  if (!res.ok) throw new Error('Lỗi khi tải loại công việc');
-  const data = await res.json();
-  return data.trackers || [];
+  try {
+    const res = await fetch('/api/redmine/trackers', { headers: getHeaders() });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.trackers && data.trackers.length > 0) {
+        return data.trackers;
+      }
+    }
+  } catch (err) {
+    console.warn('Cannot fetch trackers from API, using default Redmine trackers:', err);
+  }
+  return DEFAULT_REDMINE_TRACKERS;
 }
 
 export async function getPriorities(): Promise<RedminePriority[]> {
-  const res = await fetch('/api/redmine/priorities', { headers: getHeaders() });
-  if (!res.ok) throw new Error('Lỗi khi tải mức độ ưu tiên');
-  const data = await res.json();
-  return data.issue_priorities || [];
+  try {
+    const res = await fetch('/api/redmine/priorities', { headers: getHeaders() });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.issue_priorities && data.issue_priorities.length > 0) {
+        return data.issue_priorities;
+      }
+    }
+  } catch (err) {
+    console.warn('Cannot fetch priorities from API, using default Redmine priorities:', err);
+  }
+  return DEFAULT_REDMINE_PRIORITIES;
 }
 
 export async function getCustomFields(): Promise<RedmineCustomField[]> {
-  const res = await fetch('/api/redmine/custom_fields', { headers: getHeaders() });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.custom_fields || [];
+  try {
+    const res = await fetch('/api/redmine/custom_fields', { headers: getHeaders() });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.custom_fields && data.custom_fields.length > 0) {
+        return data.custom_fields;
+      }
+    }
+  } catch (err) {
+    // 403 Forbidden is expected for regular users on Redmine
+  }
+  return DEFAULT_REDMINE_CUSTOM_FIELDS;
 }
 
 export async function getIssueCategories(projectId: number | string): Promise<RedmineIssueCategory[]> {
@@ -381,6 +574,25 @@ export async function getTimeEntries(projectId?: number | string): Promise<Redmi
   return data.time_entries || [];
 }
 
+// Reports must read every page, including entries attached to closed issues.
+export async function fetchReportTimeEntries(projectId: string, from: string, to: string): Promise<RedmineTimeEntry[]> {
+  const entries = new Map<number, RedmineTimeEntry>();
+  let offset = 0;
+  while (true) {
+    const query = new URLSearchParams({ limit: '100', offset: String(offset), from, to, sort: 'id:asc' });
+    if (projectId !== 'all') query.set('project_id', projectId);
+    const res = await fetch(`/api/redmine/time_entries?${query}`, { headers: getHeaders() });
+    if (!res.ok) throw new Error('Không thể tải đầy đủ nhật ký giờ công từ Redmine');
+    const data = await res.json();
+    const page: RedmineTimeEntry[] = data.time_entries || [];
+    for (const entry of page) entries.set(entry.id, entry);
+    offset += page.length;
+    if (offset >= data.total_count) break;
+    if (!page.length) throw new Error('Redmine trả về dữ liệu giờ công chưa đầy đủ. Hãy tải lại.');
+  }
+  return [...entries.values()];
+}
+
 export async function logTimeEntry(entry: {
   issue_id?: number;
   project_id?: number;
@@ -410,28 +622,28 @@ export interface AIModelOption {
 
 export const AVAILABLE_AI_MODELS: AIModelOption[] = [
   {
-    id: 'gemini-3.1-flash-lite',
-    name: 'Gemini 3.1 Flash Lite',
-    description: 'Tốc độ siêu nhanh, ổn định & tối ưu Standup (Khuyên dùng)',
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    description: 'Khuyên dùng - Phản hồi siêu nhanh, thông minh & tối ưu nhất cho báo cáo PM',
     badge: 'Khuyên dùng',
     isDefault: true,
   },
   {
-    id: 'gemini-3.6-flash',
-    name: 'Gemini 3.6 Flash',
-    description: 'Phân tích sâu, văn phong quản trị dự án chi tiết',
-    badge: 'Mạnh mẽ',
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    description: 'Tốc độ cực cao, xử lý ổn định dữ liệu Redmine',
+    badge: 'Tốc độ cao',
   },
   {
-    id: 'gemini-3.8-flash',
-    name: 'Gemini 3.8 Flash',
-    description: 'Mô hình suy luận Flash mới nhất',
-    badge: 'Mới',
+    id: 'gemini-1.5-flash',
+    name: 'Gemini 1.5 Flash',
+    description: 'Mô hình Flash tiêu chuẩn đa năng của Google',
   },
   {
-    id: 'gemini-flash-latest',
-    name: 'Gemini Flash Latest',
-    description: 'Bản Flash cập nhật liên tục từ Google AI',
+    id: 'gemini-2.5-pro',
+    name: 'Gemini 2.5 Pro',
+    description: 'Mô hình tư duy chuyên sâu, phân tích rủi ro toàn diện',
+    badge: 'Chuyên sâu',
   },
 ];
 
@@ -449,9 +661,10 @@ export async function askGeminiPM(
   statistics: any,
   model?: string
 ): Promise<GeminiPMResponse> {
+  const headers = getHeaders();
   const res = await fetch('/api/gemini/pm-insights', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ mode, projectName, issues, statistics, model }),
   });
   if (!res.ok) {

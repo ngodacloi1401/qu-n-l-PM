@@ -34,7 +34,7 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
     if (saved && AVAILABLE_AI_MODELS.some((m) => m.id === saved)) {
       return saved;
     }
-    return 'gemini-3.1-flash-lite';
+    return 'gemini-2.5-flash';
   });
   const [customModel, setCustomModel] = useState<string>('');
   const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
@@ -321,7 +321,7 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
             <p className="font-semibold text-rose-800">Không thể tạo báo cáo AI</p>
             <p>{errorMsg}</p>
             <p className="text-2xs text-rose-600/80 mt-1">
-              Gợi ý: Hãy thử chọn model <b>Gemini 3.6 Flash</b> hoặc <b>Gemini 3.1 Flash Lite</b> ở menu trên để nhận phản hồi nhanh nhất.
+              Gợi ý: Hãy kiểm tra đã cấu hình <b>Gemini API Key</b> trong menu Cài đặt (biểu tượng ⚙️ góc trên) hoặc thử chọn model <b>Gemini 2.5 Flash</b>.
             </p>
           </div>
         </div>

@@ -241,6 +241,20 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             <button
+              id="tab-ot"
+              onClick={() => onSelectView('ot')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors ${activeView === 'ot' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-slate-600 hover:bg-slate-100'}`}
+            >
+              <Clock className="w-4 h-4" /><span>Tổng hợp OT</span>
+            </button>
+            <button
+              id="tab-trackers"
+              onClick={() => onSelectView('trackers')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors ${activeView === 'trackers' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-slate-600 hover:bg-slate-100'}`}
+            >
+              <TableProperties className="w-4 h-4" /><span>Trackers</span>
+            </button>
+            <button
               id="tab-ai"
               onClick={() => onSelectView('ai')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${

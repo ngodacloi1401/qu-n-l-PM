@@ -246,8 +246,8 @@ app.get('/api/redmine/issue_categories', async (req: Request, res: Response) => 
 
 app.get('/api/redmine/time_entries', async (req: Request, res: Response) => {
   try {
-    const { project_id, limit = '100' } = req.query;
-    const params: Record<string, any> = { limit };
+    const { project_id, limit = '100', offset = '0', from, to, sort } = req.query;
+    const params: Record<string, any> = { limit, offset, from, to, sort };
     if (project_id && project_id !== 'all') params.project_id = project_id;
 
     const result = await fetchRedmine(req, '/time_entries.json', { params });
@@ -272,10 +272,15 @@ app.post('/api/redmine/time_entries', async (req: Request, res: Response) => {
 app.post('/api/gemini/pm-insights', async (req: Request, res: Response) => {
   try {
     const { mode, projectName, issues, statistics, model } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
+    const clientKey = (req.headers['x-gemini-api-key'] as string | undefined)?.trim();
+    const apiKey = clientKey || process.env.GEMINI_API_KEY;
+
     if (!apiKey) {
-      return res.status(500).json({ error: 'GEMINI_API_KEY is not set in environment.' });
+      return res.status(400).json({
+        error: 'Chưa cấu hình GEMINI_API_KEY. Vui lòng bấm vào biểu tượng Cài đặt (⚙️) ở góc trên bên phải màn hình để nhập Gemini API Key của bạn.',
+      });
     }
+
     const ai = new GoogleGenAI({
       apiKey,
       httpOptions: {
@@ -302,13 +307,12 @@ Dựa vào dữ liệu: ${JSON.stringify({ statistics, sampleIssues: issues?.sli
 Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việc cụ thể cho PM Redmine bằng Tiếng Việt.`;
     }
 
-    const primaryModel = (typeof model === 'string' && model.trim()) ? model.trim() : 'gemini-3.1-flash-lite';
+    const primaryModel = (typeof model === 'string' && model.trim()) ? model.trim() : 'gemini-2.5-flash';
     const candidateModels: string[] = [primaryModel];
-    if (!candidateModels.includes('gemini-3.1-flash-lite')) {
-      candidateModels.push('gemini-3.1-flash-lite');
-    }
-    if (!candidateModels.includes('gemini-3.6-flash')) {
-      candidateModels.push('gemini-3.6-flash');
+    for (const m of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-pro']) {
+      if (!candidateModels.includes(m)) {
+        candidateModels.push(m);
+      }
     }
 
     let lastError: any = null;
@@ -322,7 +326,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
           contents: prompt,
         });
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error(`Model ${candidate} timed out after 20s`)), 20000);
+          setTimeout(() => reject(new Error(`Model ${candidate} timed out after 25s`)), 25000);
         });
 
         const response: any = await Promise.race([generatePromise, timeoutPromise]);
@@ -337,7 +341,8 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
     }
 
     if (!responseText) {
-      throw lastError || new Error('Không thể tạo báo cáo với các model hiện tại');
+      const errMsg = lastError?.message || 'Không thể tạo báo cáo với các model hiện tại';
+      return res.status(500).json({ error: errMsg });
     }
 
     return res.json({
