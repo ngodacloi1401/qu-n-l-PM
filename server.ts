@@ -20,7 +20,7 @@ const getRedmineConfig = (req: Request) => {
   const customKey = req.headers['x-redmine-api-key'] as string | undefined;
 
   const baseUrl = (customUrl?.trim() || process.env.REDMINE_URL || 'https://redmine.anybim.vn').replace(/\/+$/, '');
-  const apiKey = customKey?.trim() || process.env.REDMINE_API_KEY || '440da87a37415860ff240080d18ba34b21536eb8';
+  const apiKey = customKey?.trim() || process.env.REDMINE_API_KEY || '485a0bd120e3515ab2442afe570f2a6829a55342';
 
   return { baseUrl, apiKey };
 };
@@ -116,32 +116,20 @@ app.get('/api/redmine/projects', async (req: Request, res: Response) => {
 // Issues list with flexible query params
 app.get('/api/redmine/issues', async (req: Request, res: Response) => {
   try {
-    const {
-      project_id,
-      status_id,
-      assigned_to_id,
-      tracker_id,
-      fixed_version_id,
-      priority_id,
-      limit = '100',
-      offset = '0',
-      sort = 'updated_on:desc',
-      include = 'attachments,relations',
-    } = req.query;
-
     const params: Record<string, any> = {
-      limit,
-      offset,
-      sort,
-      include,
+      limit: '100',
+      offset: '0',
+      sort: 'updated_on:desc',
+      include: 'attachments,relations',
+      ...req.query,
     };
 
-    if (project_id && project_id !== 'all') params.project_id = project_id;
-    if (status_id && status_id !== 'all') params.status_id = status_id;
-    if (assigned_to_id && assigned_to_id !== 'all') params.assigned_to_id = assigned_to_id;
-    if (tracker_id && tracker_id !== 'all') params.tracker_id = tracker_id;
-    if (fixed_version_id && fixed_version_id !== 'all') params.fixed_version_id = fixed_version_id;
-    if (priority_id && priority_id !== 'all') params.priority_id = priority_id;
+    // Clean up 'all' values
+    for (const key of Object.keys(params)) {
+      if (params[key] === 'all' || params[key] === undefined || params[key] === '') {
+        delete params[key];
+      }
+    }
 
     const result = await fetchRedmine(req, '/issues.json', { params });
     return res.status(result.status).json(result.data);
@@ -300,14 +288,22 @@ function getAIClient() {
     if (!apiKey) {
       throw new Error('GEMINI_API_KEY is not configured');
     }
-    aiClient = new GoogleGenAI({ apiKey });
+    aiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
   }
   return aiClient;
 }
 
 app.post('/api/gemini/pm-insights', async (req: Request, res: Response) => {
   try {
-    const { mode, projectName, issues, statistics } = req.body;
+    const { mode, projectName, issues, statistics, model } = req.body;
+    console.log('[AI Route] Received request:', { mode, projectName, model: model || 'default' });
 
     let prompt = '';
     if (mode === 'standup') {
@@ -342,12 +338,56 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
     }
 
     const ai = getAIClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-    });
+    const primaryModel = (typeof model === 'string' && model.trim()) ? model.trim() : 'gemini-3.1-flash-lite';
 
-    return res.json({ result: response.text });
+    // Fallback chain in case of model spike / 503 high demand / availability issues
+    const candidateModels: string[] = [primaryModel];
+    if (!candidateModels.includes('gemini-3.1-flash-lite')) {
+      candidateModels.push('gemini-3.1-flash-lite');
+    }
+    if (!candidateModels.includes('gemini-3.6-flash')) {
+      candidateModels.push('gemini-3.6-flash');
+    }
+
+    let lastError: any = null;
+    let responseText = '';
+    let resolvedModel = primaryModel;
+
+    for (const candidate of candidateModels) {
+      try {
+        console.log(`[AI Route] Attempting model: ${candidate}`);
+        // 20s timeout per candidate to fail fast if model is unresponsive
+        const generatePromise = ai.models.generateContent({
+          model: candidate,
+          contents: prompt,
+        });
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error(`Model ${candidate} timed out after 20s`)), 20000);
+        });
+
+        const response: any = await Promise.race([generatePromise, timeoutPromise]);
+        if (response && response.text) {
+          responseText = response.text;
+          resolvedModel = candidate;
+          console.log(`[AI Route] Success with model: ${candidate}`);
+          break;
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[AI Route] Model ${candidate} failed/timed out:`, err.message || err);
+      }
+    }
+
+    if (!responseText) {
+      throw lastError || new Error('Không thể tạo báo cáo với các model hiện tại');
+    }
+
+    return res.json({
+      result: responseText,
+      usedModel: resolvedModel,
+      requestedModel: primaryModel,
+      fallbackOccurred: resolvedModel !== primaryModel,
+    });
   } catch (error: any) {
     console.error('Gemini error:', error);
     return res.status(500).json({ error: error.message || 'Gemini processing failed' });

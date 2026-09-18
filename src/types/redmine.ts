@@ -118,3 +118,15 @@ export interface RedmineConfig {
 }
 
 export type ViewMode = 'kanban' | 'list' | 'analytics' | 'time' | 'ai';
+
+export type TimePeriodType =
+  | 'all'
+  | 'this_month'
+  | 'last_month'
+  | 'specific_month'
+  | 'this_week'
+  | 'last_week'
+  | 'today'
+  | 'custom';
+
+export type DateFieldType = 'created_on' | 'updated_on' | 'due_date';

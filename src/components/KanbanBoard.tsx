@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   AlertCircle,
   Clock,
@@ -9,6 +9,9 @@ import {
   User,
   Calendar,
   Layers,
+  Columns,
+  EyeOff,
+  Eye,
 } from 'lucide-react';
 import {
   RedmineIssue,
@@ -20,60 +23,60 @@ import {
 interface KanbanColumnConfig {
   id: string;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   statusIds: number[];
   accentColor: string;
   bgHeader: string;
 }
 
-const KANBAN_COLUMNS: KanbanColumnConfig[] = [
+const DEFAULT_GROUPED_COLUMNS: KanbanColumnConfig[] = [
   {
     id: 'new',
-    title: 'Mới tạo',
-    subtitle: 'Chưa bắt đầu',
+    title: 'Mới tạo (New)',
+    subtitle: 'Chưa thực hiện',
     statusIds: [1],
-    accentColor: 'border-blue-500 text-blue-700 bg-blue-50',
-    bgHeader: 'bg-blue-50/60',
+    accentColor: 'bg-blue-500 text-blue-700',
+    bgHeader: 'bg-blue-50/70',
   },
   {
     id: 'in_progress',
-    title: 'Đang làm',
+    title: 'Đang làm & Chờ (In Progress)',
     subtitle: 'In Progress / Pending',
     statusIds: [2, 8],
-    accentColor: 'border-amber-500 text-amber-700 bg-amber-50',
-    bgHeader: 'bg-amber-50/60',
+    accentColor: 'bg-amber-500 text-amber-700',
+    bgHeader: 'bg-amber-50/70',
   },
   {
     id: 'qa_testing',
-    title: 'Kiểm thử QA',
-    subtitle: 'Ready / Testing / Resolved',
-    statusIds: [16, 12, 3],
-    accentColor: 'border-purple-500 text-purple-700 bg-purple-50',
-    bgHeader: 'bg-purple-50/60',
+    title: 'Kiểm thử QA (Testing)',
+    subtitle: 'Ready For QA / QA Testing',
+    statusIds: [16, 12],
+    accentColor: 'bg-purple-500 text-purple-700',
+    bgHeader: 'bg-purple-50/70',
   },
   {
-    id: 'deployment',
-    title: 'STG & PROD',
+    id: 'stg_prod',
+    title: 'Môi trường STG & PROD',
     subtitle: 'QA Verified / STG / PROD',
     statusIds: [7, 11, 9],
-    accentColor: 'border-cyan-500 text-cyan-700 bg-cyan-50',
-    bgHeader: 'bg-cyan-50/60',
+    accentColor: 'bg-cyan-500 text-cyan-700',
+    bgHeader: 'bg-cyan-50/70',
   },
   {
-    id: 'closed',
-    title: 'Đã hoàn tất',
-    subtitle: 'Closed / Verified',
-    statusIds: [5, 6, 10],
-    accentColor: 'border-emerald-500 text-emerald-700 bg-emerald-50',
-    bgHeader: 'bg-emerald-50/60',
+    id: 'resolved_closed',
+    title: 'Đã hoàn tất & Đóng',
+    subtitle: 'Resolved / Verified / Closed',
+    statusIds: [3, 10, 5, 6],
+    accentColor: 'bg-emerald-500 text-emerald-700',
+    bgHeader: 'bg-emerald-50/70',
   },
   {
-    id: 'blocked',
-    title: 'Bị chặn / Lỗi',
-    subtitle: 'Blocked / Failed',
+    id: 'issues_blocked',
+    title: 'Lỗi / Bị chặn',
+    subtitle: 'Blocked / Failed / Can\'t repro',
     statusIds: [18, 4, 17],
-    accentColor: 'border-rose-500 text-rose-700 bg-rose-50',
-    bgHeader: 'bg-rose-50/60',
+    accentColor: 'bg-rose-500 text-rose-700',
+    bgHeader: 'bg-rose-50/70',
   },
 ];
 
@@ -94,6 +97,58 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   onQuickStatusChange,
   baseUrl,
 }) => {
+  const [boardMode, setBoardMode] = useState<'individual' | 'grouped'>('individual');
+  const [hideEmptyColumns, setHideEmptyColumns] = useState(false);
+
+  const getStatusColorConfig = (statusName: string, statusId: number) => {
+    const s = statusName.toLowerCase();
+    if (statusId === 1 || s.includes('new')) {
+      return { accentColor: 'bg-blue-500 text-blue-700', bgHeader: 'bg-blue-50/70' };
+    }
+    if (statusId === 2 || s.includes('progress')) {
+      return { accentColor: 'bg-amber-500 text-amber-700', bgHeader: 'bg-amber-50/70' };
+    }
+    if (s.includes('qa') || s.includes('test')) {
+      return { accentColor: 'bg-purple-500 text-purple-700', bgHeader: 'bg-purple-50/70' };
+    }
+    if (s.includes('stg') || s.includes('prod')) {
+      return { accentColor: 'bg-cyan-500 text-cyan-700', bgHeader: 'bg-cyan-50/70' };
+    }
+    if (s.includes('resolve') || s.includes('close') || s.includes('verifi')) {
+      return { accentColor: 'bg-emerald-500 text-emerald-700', bgHeader: 'bg-emerald-50/70' };
+    }
+    if (s.includes('fail') || s.includes('block') || s.includes('can\'t')) {
+      return { accentColor: 'bg-rose-500 text-rose-700', bgHeader: 'bg-rose-50/70' };
+    }
+    if (s.includes('pending')) {
+      return { accentColor: 'bg-orange-500 text-orange-700', bgHeader: 'bg-orange-50/70' };
+    }
+    return { accentColor: 'bg-slate-400 text-slate-700', bgHeader: 'bg-slate-100/70' };
+  };
+
+  // Generate columns depending on board mode
+  const columns: KanbanColumnConfig[] =
+    boardMode === 'individual'
+      ? statuses.map((st) => {
+          const colors = getStatusColorConfig(st.name, st.id);
+          return {
+            id: `status_${st.id}`,
+            title: st.name,
+            subtitle: `ID: ${st.id}`,
+            statusIds: [st.id],
+            accentColor: colors.accentColor,
+            bgHeader: colors.bgHeader,
+          };
+        })
+      : DEFAULT_GROUPED_COLUMNS;
+
+  // Filter columns if hiding empty
+  const activeColumns = columns.filter((col) => {
+    if (!hideEmptyColumns) return true;
+    const count = issues.filter((iss) => col.statusIds.includes(iss.status.id)).length;
+    return count > 0;
+  });
+
   const isOverdue = (dateStr?: string, statusName?: string) => {
     if (!dateStr) return false;
     if (statusName?.toLowerCase().includes('close') || statusName?.toLowerCase().includes('verified')) {
@@ -139,157 +194,204 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   };
 
   return (
-    <div className="overflow-x-auto pb-4">
-      <div className="flex gap-4 min-w-[1300px] items-start">
-        {KANBAN_COLUMNS.map((col) => {
-          const colIssues = issues.filter((iss) => col.statusIds.includes(iss.status.id));
-
-          return (
-            <div
-              key={col.id}
-              className="w-80 flex-shrink-0 bg-slate-100/70 rounded-xl border border-slate-200 flex flex-col max-h-[calc(100vh-230px)]"
+    <div className="space-y-3">
+      {/* Kanban Mode Controls */}
+      <div className="bg-white p-2.5 px-4 rounded-xl border border-slate-200 flex items-center justify-between gap-3 flex-wrap shadow-2xs">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-700">Chế độ hiển thị cột:</span>
+          <div className="inline-flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            <button
+              onClick={() => setBoardMode('individual')}
+              className={`px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                boardMode === 'individual'
+                  ? 'bg-white text-indigo-600 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
             >
-              {/* Column Header */}
-              <div className={`p-3 border-b border-slate-200 rounded-t-xl ${col.bgHeader}`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${col.accentColor.split(' ')[0].replace('border', 'bg')}`} />
-                    <h3 className="font-bold text-sm text-slate-800">{col.title}</h3>
+              Chuẩn Redmine ({statuses.length} trạng thái)
+            </button>
+            <button
+              onClick={() => setBoardMode('grouped')}
+              className={`px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                boardMode === 'grouped'
+                  ? 'bg-white text-indigo-600 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Nhóm theo quy trình (Pipeline)
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 text-xs">
+          <button
+            onClick={() => setHideEmptyColumns(!hideEmptyColumns)}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
+              hideEmptyColumns
+                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-semibold'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            {hideEmptyColumns ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            <span>{hideEmptyColumns ? 'Đang ẩn cột trống' : 'Ẩn các cột không có việc'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Columns Board */}
+      <div className="overflow-x-auto pb-4">
+        <div className="flex gap-4 min-w-max items-start">
+          {activeColumns.map((col) => {
+            const colIssues = issues.filter((iss) => col.statusIds.includes(iss.status.id));
+
+            return (
+              <div
+                key={col.id}
+                className="w-80 flex-shrink-0 bg-slate-100/70 rounded-xl border border-slate-200 flex flex-col max-h-[calc(100vh-250px)] shadow-2xs"
+              >
+                {/* Column Header */}
+                <div className={`p-3 border-b border-slate-200 rounded-t-xl ${col.bgHeader}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2.5 h-2.5 rounded-full ${col.accentColor.split(' ')[0]}`} />
+                      <h3 className="font-bold text-xs text-slate-800 tracking-tight">{col.title}</h3>
+                    </div>
                     <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-white text-slate-700 border border-slate-200 shadow-2xs">
                       {colIssues.length}
                     </span>
                   </div>
+                  {col.subtitle && <div className="text-[11px] text-slate-500 mt-0.5">{col.subtitle}</div>}
                 </div>
-                <div className="text-[11px] text-slate-500 mt-0.5">{col.subtitle}</div>
-              </div>
 
-              {/* Cards Container */}
-              <div className="p-2.5 space-y-2.5 overflow-y-auto flex-1">
-                {colIssues.length === 0 ? (
-                  <div className="py-8 text-center text-xs text-slate-400 italic">
-                    Không có công việc nào
-                  </div>
-                ) : (
-                  colIssues.map((issue) => {
-                    const overdue = isOverdue(issue.due_date, issue.status.name);
+                {/* Cards Container */}
+                <div className="p-2.5 space-y-2.5 overflow-y-auto flex-1">
+                  {colIssues.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-slate-400 italic">
+                      Không có công việc nào
+                    </div>
+                  ) : (
+                    colIssues.map((issue) => {
+                      const overdue = isOverdue(issue.due_date, issue.status.name);
 
-                    return (
-                      <div
-                        key={issue.id}
-                        onClick={() => onSelectIssue(issue)}
-                        className={`bg-white rounded-lg p-3 border hover:shadow-md transition-all cursor-pointer group relative ${
-                          overdue
-                            ? 'border-rose-300 ring-1 ring-rose-200 shadow-2xs'
-                            : 'border-slate-200 hover:border-indigo-300 shadow-2xs'
-                        }`}
-                      >
-                        {/* Top Metadata */}
-                        <div className="flex items-center justify-between gap-1 mb-2">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span
-                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${getTrackerStyle(
-                                issue.tracker?.name
-                              )}`}
-                            >
-                              {issue.tracker?.name}
-                            </span>
-                            <a
-                              href={`${baseUrl}/issues/${issue.id}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-[11px] font-mono font-semibold text-slate-500 hover:text-indigo-600 inline-flex items-center gap-0.5"
-                            >
-                              #{issue.id}
-                              <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </a>
-                          </div>
-
-                          <div>{getPriorityBadge(issue.priority?.name)}</div>
-                        </div>
-
-                        {/* Title */}
-                        <h4 className="text-xs font-semibold text-slate-800 line-clamp-2 leading-relaxed mb-2">
-                          {issue.subject}
-                        </h4>
-
-                        {/* Progress bar */}
-                        <div className="mb-2.5">
-                          <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
-                            <span>Tiến độ</span>
-                            <span className="font-semibold text-slate-700">{issue.done_ratio}%</span>
-                          </div>
-                          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${
-                                issue.done_ratio === 100
-                                  ? 'bg-emerald-500'
-                                  : issue.done_ratio > 50
-                                  ? 'bg-indigo-500'
-                                  : 'bg-amber-500'
-                              }`}
-                              style={{ width: `${issue.done_ratio}%` }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Card Footer: Assignee & Date & Quick Action */}
-                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 text-[11px]">
-                          {/* Assignee */}
-                          <div className="flex items-center gap-1.5 text-slate-600 truncate max-w-[120px]">
-                            <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-                              {issue.assigned_to ? issue.assigned_to.name?.[0] || 'U' : '?'}
-                            </div>
-                            <span className="truncate" title={issue.assigned_to?.name || 'Chưa gán'}>
-                              {issue.assigned_to?.name || 'Chưa gán'}
-                            </span>
-                          </div>
-
-                          {/* Due date or Overdue */}
-                          <div className="flex items-center gap-1">
-                            {issue.due_date ? (
+                      return (
+                        <div
+                          key={issue.id}
+                          onClick={() => onSelectIssue(issue)}
+                          className={`bg-white rounded-lg p-3 border hover:shadow-md transition-all cursor-pointer group relative ${
+                            overdue
+                              ? 'border-rose-300 ring-1 ring-rose-200 shadow-2xs'
+                              : 'border-slate-200 hover:border-indigo-300 shadow-2xs'
+                          }`}
+                        >
+                          {/* Top Metadata */}
+                          <div className="flex items-center justify-between gap-1 mb-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span
-                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                  overdue
-                                    ? 'bg-rose-100 text-rose-800 font-semibold'
-                                    : 'text-slate-500 bg-slate-50'
-                                }`}
-                                title={`Hạn chót: ${issue.due_date}`}
+                                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${getTrackerStyle(
+                                  issue.tracker?.name
+                                )}`}
                               >
-                                {overdue ? (
-                                  <AlertCircle className="w-3 h-3 text-rose-600" />
-                                ) : (
-                                  <Calendar className="w-3 h-3 text-slate-400" />
-                                )}
-                                <span>{issue.due_date.slice(5)}</span>
+                                {issue.tracker?.name}
                               </span>
-                            ) : null}
+                              <a
+                                href={`${baseUrl}/issues/${issue.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-[11px] font-mono font-semibold text-slate-500 hover:text-indigo-600 inline-flex items-center gap-0.5"
+                              >
+                                #{issue.id}
+                                <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </a>
+                            </div>
 
-                            {/* Quick status mover */}
-                            <select
-                              value={issue.status.id}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => onQuickStatusChange(issue.id, Number(e.target.value))}
-                              title="Chuyển trạng thái nhanh"
-                              className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 py-0.5 px-1 rounded border-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                            >
-                              {statuses.map((st) => (
-                                <option key={st.id} value={st.id}>
-                                  {st.name}
-                                </option>
-                              ))}
-                            </select>
+                            <div>{getPriorityBadge(issue.priority?.name)}</div>
+                          </div>
+
+                          {/* Title */}
+                          <h4 className="text-xs font-semibold text-slate-800 line-clamp-2 leading-relaxed mb-2">
+                            {issue.subject}
+                          </h4>
+
+                          {/* Progress bar */}
+                          <div className="mb-2.5">
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
+                              <span>Tiến độ</span>
+                              <span className="font-semibold text-slate-700">{issue.done_ratio}%</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  issue.done_ratio === 100
+                                    ? 'bg-emerald-500'
+                                    : issue.done_ratio > 50
+                                    ? 'bg-indigo-500'
+                                    : 'bg-amber-500'
+                                }`}
+                                style={{ width: `${issue.done_ratio}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Card Footer: Assignee & Date & Quick Action */}
+                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 text-[11px]">
+                            {/* Assignee */}
+                            <div className="flex items-center gap-1.5 text-slate-600 truncate max-w-[120px]">
+                              <div className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                                {issue.assigned_to ? issue.assigned_to.name?.[0] || 'U' : '?'}
+                              </div>
+                              <span className="truncate" title={issue.assigned_to?.name || 'Chưa gán'}>
+                                {issue.assigned_to?.name || 'Chưa gán'}
+                              </span>
+                            </div>
+
+                            {/* Due date or Overdue */}
+                            <div className="flex items-center gap-1">
+                              {issue.due_date ? (
+                                <span
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                    overdue
+                                      ? 'bg-rose-100 text-rose-800 font-semibold'
+                                      : 'text-slate-500 bg-slate-50'
+                                  }`}
+                                  title={`Hạn chót: ${issue.due_date}`}
+                                >
+                                  {overdue ? (
+                                    <AlertCircle className="w-3 h-3 text-rose-600" />
+                                  ) : (
+                                    <Calendar className="w-3 h-3 text-slate-400" />
+                                  )}
+                                  <span>{issue.due_date.slice(5)}</span>
+                                </span>
+                              ) : null}
+
+                              {/* Quick status mover */}
+                              <select
+                                value={issue.status.id}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => onQuickStatusChange(issue.id, Number(e.target.value))}
+                                title="Chuyển trạng thái nhanh"
+                                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 py-0.5 px-1 rounded border-none focus:ring-1 focus:ring-indigo-500 cursor-pointer max-w-[90px] truncate"
+                              >
+                                {statuses.map((st) => (
+                                  <option key={st.id} value={st.id}>
+                                    {st.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })
-                )}
+                      );
+                    })
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 };
+

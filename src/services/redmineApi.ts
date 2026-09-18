@@ -9,17 +9,42 @@ import {
   RedmineMembership,
   RedmineVersion,
   RedmineTimeEntry,
+  TimePeriodType,
+  DateFieldType,
 } from '../types/redmine';
 
 const STORAGE_KEY_URL = 'redmine_pm_base_url';
 const STORAGE_KEY_API_KEY = 'redmine_pm_api_key';
 
 export const DEFAULT_REDMINE_URL = 'https://redmine.anybim.vn';
-export const DEFAULT_REDMINE_KEY = '440da87a37415860ff240080d18ba34b21536eb8';
+export const DEFAULT_REDMINE_KEY = '485a0bd120e3515ab2442afe570f2a6829a55342';
+
+export const DEFAULT_REDMINE_STATUSES: RedmineStatus[] = [
+  { id: 1, name: 'New', is_closed: false },
+  { id: 2, name: 'In Progress', is_closed: false },
+  { id: 16, name: 'Ready For QA', is_closed: false },
+  { id: 12, name: 'QA testing', is_closed: false },
+  { id: 7, name: 'QA Verified', is_closed: false },
+  { id: 4, name: 'Failed', is_closed: false },
+  { id: 11, name: 'On STG', is_closed: false },
+  { id: 9, name: 'On PROD', is_closed: false },
+  { id: 3, name: 'Resolved', is_closed: false },
+  { id: 10, name: 'Client Verified', is_closed: true },
+  { id: 8, name: 'Pending', is_closed: false },
+  { id: 18, name: 'Blocked By', is_closed: false },
+  { id: 17, name: "Can't reproduce", is_closed: false },
+  { id: 5, name: 'Closed', is_closed: true },
+  { id: 6, name: 'Close-Duplicated', is_closed: true },
+];
 
 export function getStoredConfig(): RedmineConfig {
   const url = localStorage.getItem(STORAGE_KEY_URL) || DEFAULT_REDMINE_URL;
-  const key = localStorage.getItem(STORAGE_KEY_API_KEY) || DEFAULT_REDMINE_KEY;
+  let key = localStorage.getItem(STORAGE_KEY_API_KEY);
+  // Auto migrate from old key
+  if (!key || key === '440da87a37415860ff240080d18ba34b21536eb8') {
+    key = DEFAULT_REDMINE_KEY;
+    localStorage.setItem(STORAGE_KEY_API_KEY, DEFAULT_REDMINE_KEY);
+  }
   return { baseUrl: url, apiKey: key };
 }
 
@@ -36,6 +61,98 @@ function getHeaders(): HeadersInit {
     'x-redmine-api-key': cfg.apiKey,
   };
 }
+
+export function formatRedmineDate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function getDateFilterForPeriod(
+  period: TimePeriodType,
+  options: {
+    specificMonth?: string; // 'YYYY-MM'
+    customStart?: string; // 'YYYY-MM-DD'
+    customEnd?: string; // 'YYYY-MM-DD'
+  } = {}
+): string | undefined {
+  const now = new Date();
+  if (period === 'all') return undefined;
+
+  if (period === 'today') {
+    const todayStr = formatRedmineDate(now);
+    return `><${todayStr}|${todayStr}`;
+  }
+
+  if (period === 'this_week') {
+    const d = new Date(now);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
+    const monday = new Date(d.setDate(diff));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return `><${formatRedmineDate(monday)}|${formatRedmineDate(sunday)}`;
+  }
+
+  if (period === 'last_week') {
+    const d = new Date(now);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1) - 7;
+    const monday = new Date(d.setDate(diff));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    return `><${formatRedmineDate(monday)}|${formatRedmineDate(sunday)}`;
+  }
+
+  if (period === 'this_month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return `><${formatRedmineDate(start)}|${formatRedmineDate(end)}`;
+  }
+
+  if (period === 'last_month') {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    return `><${formatRedmineDate(start)}|${formatRedmineDate(end)}`;
+  }
+
+  if (period === 'specific_month' && options.specificMonth) {
+    const [y, m] = options.specificMonth.split('-').map(Number);
+    if (y && m) {
+      const start = new Date(y, m - 1, 1);
+      const end = new Date(y, m, 0);
+      return `><${formatRedmineDate(start)}|${formatRedmineDate(end)}`;
+    }
+  }
+
+  if (period === 'custom') {
+    if (options.customStart && options.customEnd) {
+      return `><${options.customStart}|${options.customEnd}`;
+    } else if (options.customStart) {
+      return `>=${options.customStart}`;
+    } else if (options.customEnd) {
+      return `<=${options.customEnd}`;
+    }
+  }
+
+  return undefined;
+}
+
+export function getDateFilterQuery(
+  period: TimePeriodType,
+  dateField: DateFieldType,
+  options: {
+    specificMonth?: string;
+    customStart?: string;
+    customEnd?: string;
+  } = {}
+): Record<string, string> {
+  const filterVal = getDateFilterForPeriod(period, options);
+  if (!filterVal) return {};
+  return { [dateField]: filterVal };
+}
+
 
 export async function getCurrentUser(): Promise<RedmineUser> {
   const res = await fetch('/api/redmine/me', { headers: getHeaders() });
@@ -58,6 +175,9 @@ export interface IssueFilterParams {
   tracker_id?: string | number;
   fixed_version_id?: string | number;
   priority_id?: string | number;
+  created_on?: string;
+  updated_on?: string;
+  due_date?: string;
   limit?: number;
   offset?: number;
   sort?: string;
@@ -78,6 +198,57 @@ export async function getIssues(params: IssueFilterParams = {}): Promise<{ issue
     issues: data.issues || [],
     total_count: data.total_count || (data.issues ? data.issues.length : 0),
   };
+}
+
+export interface FetchProgress {
+  loaded: number;
+  total: number;
+  isFinished: boolean;
+}
+
+export async function fetchAllIssues(
+  params: IssueFilterParams = {},
+  onProgress?: (progress: FetchProgress) => void,
+  maxTotal: number = 3500
+): Promise<{ issues: RedmineIssue[]; total_count: number }> {
+  const firstPage = await getIssues({ ...params, limit: 100, offset: 0 });
+  const total = firstPage.total_count;
+  let allIssues: RedmineIssue[] = [...firstPage.issues];
+
+  onProgress?.({
+    loaded: allIssues.length,
+    total,
+    isFinished: allIssues.length >= total || allIssues.length >= maxTotal,
+  });
+
+  if (total <= 100 || allIssues.length >= maxTotal) {
+    return { issues: allIssues.slice(0, maxTotal), total_count: total };
+  }
+
+  const targetCount = Math.min(total, maxTotal);
+  const remainingOffsets: number[] = [];
+  for (let offset = 100; offset < targetCount; offset += 100) {
+    remainingOffsets.push(offset);
+  }
+
+  // Fetch in batches of 4
+  const batchSize = 4;
+  for (let i = 0; i < remainingOffsets.length; i += batchSize) {
+    const batch = remainingOffsets.slice(i, i + batchSize);
+    const results = await Promise.all(
+      batch.map((offset) => getIssues({ ...params, limit: 100, offset }))
+    );
+    for (const res of results) {
+      allIssues = allIssues.concat(res.issues);
+    }
+    onProgress?.({
+      loaded: Math.min(allIssues.length, targetCount),
+      total,
+      isFinished: allIssues.length >= targetCount,
+    });
+  }
+
+  return { issues: allIssues.slice(0, maxTotal), total_count: total };
 }
 
 export async function getIssueDetail(id: number): Promise<RedmineIssue> {
@@ -207,21 +378,69 @@ export async function logTimeEntry(entry: {
   }
 }
 
+export interface AIModelOption {
+  id: string;
+  name: string;
+  description: string;
+  badge?: string;
+  isDefault?: boolean;
+}
+
+export const AVAILABLE_AI_MODELS: AIModelOption[] = [
+  {
+    id: 'gemini-3.1-flash-lite',
+    name: 'Gemini 3.1 Flash Lite',
+    description: 'Tốc độ siêu nhanh, ổn định & tối ưu Standup (Khuyên dùng)',
+    badge: 'Khuyên dùng',
+    isDefault: true,
+  },
+  {
+    id: 'gemini-3.6-flash',
+    name: 'Gemini 3.6 Flash',
+    description: 'Phân tích sâu, văn phong quản trị dự án chi tiết',
+    badge: 'Mạnh mẽ',
+  },
+  {
+    id: 'gemini-3.8-flash',
+    name: 'Gemini 3.8 Flash',
+    description: 'Mô hình suy luận Flash mới nhất',
+    badge: 'Mới',
+  },
+  {
+    id: 'gemini-flash-latest',
+    name: 'Gemini Flash Latest',
+    description: 'Bản Flash cập nhật liên tục từ Google AI',
+  },
+];
+
+export interface GeminiPMResponse {
+  result: string;
+  usedModel?: string;
+  requestedModel?: string;
+  fallbackOccurred?: boolean;
+}
+
 export async function askGeminiPM(
   mode: 'standup' | 'risk' | 'general',
   projectName: string,
   issues: RedmineIssue[],
-  statistics: any
-): Promise<string> {
+  statistics: any,
+  model?: string
+): Promise<GeminiPMResponse> {
   const res = await fetch('/api/gemini/pm-insights', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode, projectName, issues, statistics }),
+    body: JSON.stringify({ mode, projectName, issues, statistics, model }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'Không thể tạo báo cáo AI lúc này');
   }
   const data = await res.json();
-  return data.result || '';
+  return {
+    result: data.result || '',
+    usedModel: data.usedModel,
+    requestedModel: data.requestedModel,
+    fallbackOccurred: data.fallbackOccurred,
+  };
 }

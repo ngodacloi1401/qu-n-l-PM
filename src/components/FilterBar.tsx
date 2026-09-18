@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Search,
   Filter,
@@ -8,6 +8,13 @@ import {
   Flag,
   UserCheck,
   Milestone,
+  Calendar,
+  CalendarRange,
+  Clock,
+  DownloadCloud,
+  RefreshCw,
+  CheckCircle2,
+  ChevronDown,
 } from 'lucide-react';
 import {
   RedmineStatus,
@@ -15,7 +22,10 @@ import {
   RedminePriority,
   RedmineMembership,
   RedmineVersion,
+  TimePeriodType,
+  DateFieldType,
 } from '../types/redmine';
+import { FetchProgress } from '../services/redmineApi';
 
 export interface FilterState {
   search: string;
@@ -26,6 +36,12 @@ export interface FilterState {
   versionId: string;
   onlyOverdue: boolean;
   onlyMyTasks: boolean;
+  timePeriod: TimePeriodType;
+  dateField: DateFieldType;
+  specificMonth: string; // 'YYYY-MM'
+  customStart: string; // 'YYYY-MM-DD'
+  customEnd: string; // 'YYYY-MM-DD'
+  fetchLimit: number | 'all';
 }
 
 interface FilterBarProps {
@@ -37,7 +53,12 @@ interface FilterBarProps {
   memberships: RedmineMembership[];
   versions: RedmineVersion[];
   currentUserId?: number;
-  totalResults: number;
+  totalLoaded: number;
+  totalAvailable: number;
+  isLoading: boolean;
+  fetchProgress: FetchProgress | null;
+  onFetchAll: () => void;
+  onRefresh: () => void;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -49,9 +70,18 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   memberships,
   versions,
   currentUserId,
-  totalResults,
+  totalLoaded,
+  totalAvailable,
+  isLoading,
+  fetchProgress,
+  onFetchAll,
+  onRefresh,
 }) => {
-  const updateField = (key: keyof FilterState, value: any) => {
+  const [showCustomDateModal, setShowCustomDateModal] = useState(false);
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  const updateField = <K extends keyof FilterState>(key: K, value: FilterState[K]) => {
     onFilterChange({ ...filters, [key]: value });
   };
 
@@ -63,10 +93,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     filters.assigneeId !== 'all' ||
     filters.versionId !== 'all' ||
     filters.onlyOverdue ||
-    filters.onlyMyTasks;
+    filters.onlyMyTasks ||
+    filters.timePeriod !== 'all';
 
   const resetFilters = () => {
     onFilterChange({
+      ...filters,
       search: '',
       trackerId: 'all',
       statusId: 'all',
@@ -75,55 +107,66 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       versionId: 'all',
       onlyOverdue: false,
       onlyMyTasks: false,
+      timePeriod: 'all',
+      customStart: '',
+      customEnd: '',
     });
   };
 
+  const handlePeriodChange = (period: TimePeriodType) => {
+    if (period === 'specific_month' && !filters.specificMonth) {
+      updateField('specificMonth', currentMonthStr);
+    }
+    updateField('timePeriod', period);
+  };
+
   return (
-    <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-xs mb-5">
-      {/* Top row: search + quick toggles */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        {/* Search */}
+    <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-xs mb-5 space-y-3">
+      {/* Row 1: Search & Quick toggles & Fetch Controls */}
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+        {/* Search Input */}
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             id="filter-search-input"
             type="text"
-            placeholder="Tìm theo tiêu đề, nội dung, hoặc gõ #ID công việc..."
+            placeholder="Tìm theo tiêu đề, mô tả, hoặc gõ #ID (VD: #1234)..."
             value={filters.search}
             onChange={(e) => updateField('search', e.target.value)}
-            className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all placeholder:text-slate-400"
+            className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs sm:text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all placeholder:text-slate-400"
           />
           {filters.search && (
             <button
               onClick={() => updateField('search', '')}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              title="Xóa tìm kiếm"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
 
-        {/* Quick check toggles */}
+        {/* Quick Toggles */}
         <div className="flex items-center gap-2 flex-wrap">
           {currentUserId && (
             <button
               id="filter-my-tasks-btn"
               onClick={() => updateField('onlyMyTasks', !filters.onlyMyTasks)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                 filters.onlyMyTasks
                   ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-2xs'
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
               }`}
             >
               <UserCheck className="w-3.5 h-3.5" />
-              <span>Của tôi</span>
+              <span>Việc của tôi</span>
             </button>
           )}
 
           <button
             id="filter-overdue-btn"
             onClick={() => updateField('onlyOverdue', !filters.onlyOverdue)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
               filters.onlyOverdue
                 ? 'bg-rose-50 text-rose-700 border-rose-300 shadow-2xs'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
@@ -144,14 +187,232 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             </button>
           )}
 
-          <div className="text-xs font-medium text-slate-500 ml-auto md:ml-0 pl-2 border-l border-slate-200">
-            {totalResults} công việc
+          {/* Sync / Refresh */}
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+            title="Làm mới dữ liệu từ Redmine"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-indigo-600' : ''}`} />
+          </button>
+
+          {/* Data Count & Fetch All Action */}
+          <div className="flex items-center gap-2 pl-2 border-l border-slate-200 text-xs">
+            <span className="font-semibold text-slate-700">
+              {totalLoaded}
+              {totalAvailable > totalLoaded ? (
+                <span className="text-slate-400 font-normal"> / {totalAvailable} việc</span>
+              ) : (
+                <span className="text-slate-400 font-normal"> việc</span>
+              )}
+            </span>
+
+            {totalAvailable > totalLoaded && (
+              <button
+                id="fetch-all-issues-btn"
+                onClick={onFetchAll}
+                disabled={isLoading}
+                className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-semibold text-[11px] transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+              >
+                <DownloadCloud className="w-3 h-3" />
+                <span>Tải hết ({totalAvailable})</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Bottom row: Dropdowns */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-3 mt-3 border-t border-slate-100">
+      {/* Progress bar if fetching multiple pages */}
+      {fetchProgress && !fetchProgress.isFinished && (
+        <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-2 flex items-center justify-between gap-3 text-xs text-indigo-700">
+          <div className="flex items-center gap-2">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+            <span>
+              Đang tải toàn bộ dữ liệu Redmine: <strong>{fetchProgress.loaded}</strong> / {fetchProgress.total} công việc...
+            </span>
+          </div>
+          <div className="w-32 bg-indigo-200 rounded-full h-2 overflow-hidden">
+            <div
+              className="bg-indigo-600 h-2 transition-all duration-300 rounded-full"
+              style={{ width: `${Math.min(100, Math.round((fetchProgress.loaded / (fetchProgress.total || 1)) * 100))}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Row 2: Time Management Bar (Tháng / Tuần / Mọi lúc) */}
+      <div className="bg-slate-50/80 p-2.5 rounded-lg border border-slate-200/80 flex flex-wrap items-center justify-between gap-2.5">
+        {/* Left: Quick Time Presets */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1 mr-1">
+            <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+            Thời gian:
+          </span>
+
+          <button
+            onClick={() => handlePeriodChange('all')}
+            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              filters.timePeriod === 'all'
+                ? 'bg-indigo-600 text-white shadow-2xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Tất cả
+          </button>
+
+          <button
+            onClick={() => handlePeriodChange('this_month')}
+            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              filters.timePeriod === 'this_month'
+                ? 'bg-indigo-600 text-white shadow-2xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Tháng này
+          </button>
+
+          <button
+            onClick={() => handlePeriodChange('last_month')}
+            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              filters.timePeriod === 'last_month'
+                ? 'bg-indigo-600 text-white shadow-2xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Tháng trước
+          </button>
+
+          <button
+            onClick={() => handlePeriodChange('this_week')}
+            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              filters.timePeriod === 'this_week'
+                ? 'bg-indigo-600 text-white shadow-2xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Tuần này
+          </button>
+
+          <button
+            onClick={() => handlePeriodChange('last_week')}
+            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              filters.timePeriod === 'last_week'
+                ? 'bg-indigo-600 text-white shadow-2xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Tuần trước
+          </button>
+
+          <button
+            onClick={() => handlePeriodChange('today')}
+            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              filters.timePeriod === 'today'
+                ? 'bg-indigo-600 text-white shadow-2xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            Hôm nay
+          </button>
+
+          {/* Specific Month Picker */}
+          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-md px-1.5 py-0.5">
+            <span className="text-[10px] text-slate-400 font-medium">Tháng:</span>
+            <input
+              type="month"
+              value={filters.specificMonth || currentMonthStr}
+              onChange={(e) => {
+                updateField('specificMonth', e.target.value);
+                updateField('timePeriod', 'specific_month');
+              }}
+              className="text-xs bg-transparent border-none text-slate-700 font-semibold focus:outline-none cursor-pointer"
+            />
+          </div>
+
+          {/* Custom Date Range Toggle */}
+          <button
+            onClick={() => {
+              setShowCustomDateModal(!showCustomDateModal);
+              if (filters.timePeriod !== 'custom') {
+                updateField('timePeriod', 'custom');
+              }
+            }}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+              filters.timePeriod === 'custom'
+                ? 'bg-indigo-600 text-white shadow-2xs'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <CalendarRange className="w-3 h-3" />
+            <span>Tùy chọn ngày</span>
+            <ChevronDown className="w-3 h-3 ml-0.5" />
+          </button>
+        </div>
+
+        {/* Right: Date field to filter against */}
+        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+          <span className="text-[11px] text-slate-400">Lọc theo:</span>
+          <select
+            value={filters.dateField}
+            onChange={(e) => updateField('dateField', e.target.value as DateFieldType)}
+            className="bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+          >
+            <option value="created_on">Ngày tạo (created_on)</option>
+            <option value="updated_on">Ngày cập nhật (updated_on)</option>
+            <option value="due_date">Hạn hoàn thành (due_date)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Expanded Custom Date Range Input if active */}
+      {(showCustomDateModal || filters.timePeriod === 'custom') && (
+        <div className="bg-indigo-50/50 p-2.5 rounded-lg border border-indigo-200/60 flex items-center gap-3 flex-wrap text-xs">
+          <span className="font-semibold text-indigo-900 flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5 text-indigo-600" />
+            Khoảng thời gian:
+          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 text-[11px]">Từ ngày:</span>
+            <input
+              type="date"
+              value={filters.customStart}
+              onChange={(e) => {
+                updateField('customStart', e.target.value);
+                updateField('timePeriod', 'custom');
+              }}
+              className="bg-white border border-slate-300 rounded px-2 py-1 text-xs font-medium text-slate-800 focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500 text-[11px]">Đến ngày:</span>
+            <input
+              type="date"
+              value={filters.customEnd}
+              onChange={(e) => {
+                updateField('customEnd', e.target.value);
+                updateField('timePeriod', 'custom');
+              }}
+              className="bg-white border border-slate-300 rounded px-2 py-1 text-xs font-medium text-slate-800 focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          {(filters.customStart || filters.customEnd) && (
+            <button
+              onClick={() => {
+                updateField('customStart', '');
+                updateField('customEnd', '');
+                updateField('timePeriod', 'all');
+              }}
+              className="text-slate-400 hover:text-slate-600 text-xs underline cursor-pointer"
+            >
+              Hủy khoảng ngày
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Row 3: Standard Redmine Dropdowns (Tracker, Status, Priority, Assignee, Milestone) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-2 border-t border-slate-100">
         {/* Tracker */}
         <div className="relative">
           <div className="text-[11px] font-semibold text-slate-400 mb-1 flex items-center gap-1">
@@ -265,3 +526,4 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     </div>
   );
 };
+

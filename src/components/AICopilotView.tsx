@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   FileText,
@@ -9,24 +9,55 @@ import {
   RefreshCw,
   AlertCircle,
   Lightbulb,
+  Cpu,
+  ChevronDown,
+  Info,
+  Sliders,
 } from 'lucide-react';
 import { RedmineIssue, RedmineProject } from '../types/redmine';
-import { askGeminiPM } from '../services/redmineApi';
+import { askGeminiPM, AVAILABLE_AI_MODELS, GeminiPMResponse } from '../services/redmineApi';
 
 interface AICopilotViewProps {
   issues: RedmineIssue[];
   selectedProject: RedmineProject | undefined;
 }
 
+const STORAGE_KEY_MODEL = 'redmine_ai_model';
+
 export const AICopilotView: React.FC<AICopilotViewProps> = ({
   issues,
   selectedProject,
 }) => {
   const [mode, setMode] = useState<'standup' | 'risk' | 'general'>('standup');
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_MODEL);
+    if (saved && AVAILABLE_AI_MODELS.some((m) => m.id === saved)) {
+      return saved;
+    }
+    return 'gemini-3.1-flash-lite';
+  });
+  const [customModel, setCustomModel] = useState<string>('');
+  const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+
   const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState<string>('');
+  const [reportData, setReportData] = useState<GeminiPMResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [extraPrompt, setExtraPrompt] = useState('');
+  const [showExtraPrompt, setShowExtraPrompt] = useState(false);
+
+  // Sync model to localStorage
+  useEffect(() => {
+    if (!isCustomMode) {
+      localStorage.setItem(STORAGE_KEY_MODEL, selectedModel);
+    } else if (customModel.trim()) {
+      localStorage.setItem(STORAGE_KEY_MODEL, customModel.trim());
+    }
+  }, [selectedModel, customModel, isCustomMode]);
+
+  const activeModelId = isCustomMode ? (customModel.trim() || 'gemini-3.6-flash') : selectedModel;
+  const currentModelMeta = AVAILABLE_AI_MODELS.find((m) => m.id === selectedModel);
 
   const generateReport = async (chosenMode: 'standup' | 'risk' | 'general') => {
     setLoading(true);
@@ -38,14 +69,31 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
       const stats = {
         totalIssues: issues.length,
         inProgressCount: issues.filter((i) => i.status.name.toLowerCase().includes('progress')).length,
-        closedCount: issues.filter((i) => i.status.name.toLowerCase().includes('close') || i.status.name.toLowerCase().includes('verified')).length,
+        closedCount: issues.filter((i) =>
+          i.status.name.toLowerCase().includes('close') || i.status.name.toLowerCase().includes('verified')
+        ).length,
         overdueCount: issues.filter((i) => i.due_date && i.due_date < today && !i.status.name.toLowerCase().includes('close')).length,
-        blockedCount: issues.filter((i) => i.status.name.toLowerCase().includes('block') || i.status.name.toLowerCase().includes('fail')).length,
+        blockedCount: issues.filter((i) =>
+          i.status.name.toLowerCase().includes('block') || i.status.name.toLowerCase().includes('fail')
+        ).length,
       };
 
       const projectName = selectedProject ? selectedProject.name : 'Dự án Redmine (Tất cả)';
-      const result = await askGeminiPM(chosenMode, projectName, issues, stats);
-      setReport(result);
+      
+      // If extra user notes provided, attach to request stats/context
+      const enrichedStats = extraPrompt.trim()
+        ? { ...stats, userNoteForAI: extraPrompt.trim() }
+        : stats;
+
+      const response = await askGeminiPM(
+        chosenMode,
+        projectName,
+        issues,
+        enrichedStats,
+        activeModelId
+      );
+
+      setReportData(response);
     } catch (err: any) {
       setErrorMsg(err.message || 'Lỗi khi tạo báo cáo AI');
     } finally {
@@ -54,8 +102,8 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
   };
 
   const copyToClipboard = () => {
-    if (!report) return;
-    navigator.clipboard.writeText(report);
+    if (!reportData?.result) return;
+    navigator.clipboard.writeText(reportData.result);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -64,73 +112,218 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
     <div className="space-y-6">
       {/* Copilot Header */}
       <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 rounded-2xl p-6 text-white shadow-md relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300">
-              <Sparkles className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold">AI PM Copilot (Gemini 3.8 Flash)</h2>
-                <span className="bg-purple-500/30 text-purple-200 text-xs px-2 py-0.5 rounded-full border border-purple-400/30">
-                  Project Intelligence
-                </span>
+        <div className="relative z-10 flex flex-col gap-5">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300 shrink-0">
+                <Sparkles className="w-6 h-6" />
               </div>
-              <p className="text-xs text-purple-200/80 mt-1">
-                Tự động tổng hợp báo cáo Daily Standup, phân tích điểm nghẽn và đưa ra khuyến nghị quản trị
-              </p>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-lg font-bold">AI PM Copilot Workspace</h2>
+                  <span className="bg-purple-500/30 text-purple-200 text-xs px-2.5 py-0.5 rounded-full border border-purple-400/30 flex items-center gap-1">
+                    <Cpu className="w-3 h-3" />
+                    <span>{currentModelMeta?.name || activeModelId}</span>
+                  </span>
+                </div>
+                <p className="text-xs text-purple-200/80 mt-1">
+                  Tự động tổng hợp báo cáo Daily Standup, phân tích rủi ro & điểm nghẽn dự án AnyBIM
+                </p>
+              </div>
+            </div>
+
+            {/* Model Selector Pill / Dropdown */}
+            <div className="relative self-start md:self-auto">
+              <div className="flex items-center gap-2 bg-black/30 backdrop-blur-xs p-1 rounded-xl border border-white/10">
+                <div className="px-2 py-1 text-2xs uppercase tracking-wider text-purple-200/70 font-semibold flex items-center gap-1">
+                  <Cpu className="w-3 h-3 text-purple-300" />
+                  <span>Model AI:</span>
+                </div>
+
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/15 text-white rounded-lg text-xs font-medium border border-white/10 transition-colors cursor-pointer"
+                  >
+                    <span className="font-semibold text-purple-200">
+                      {isCustomMode ? `Tùy chọn: ${customModel || 'Chưa nhập'}` : currentModelMeta?.name || selectedModel}
+                    </span>
+                    {currentModelMeta?.badge && (
+                      <span className="bg-emerald-500/30 text-emerald-300 text-2xs px-1.5 py-0.5 rounded border border-emerald-400/30 font-medium">
+                        {currentModelMeta.badge}
+                      </span>
+                    )}
+                    <ChevronDown className={`w-3.5 h-3.5 text-purple-300 transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {/* Dropdown Menu */}
+                  {isModelDropdownOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsModelDropdownOpen(false)}
+                      />
+                      <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 p-2 text-slate-100 text-xs">
+                        <div className="px-2 py-1.5 text-2xs text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800 mb-1 flex items-center justify-between">
+                          <span>Chọn Model Gemini</span>
+                          <span className="text-purple-400">@google/genai</span>
+                        </div>
+
+                        {AVAILABLE_AI_MODELS.map((model) => {
+                          const isSelected = !isCustomMode && selectedModel === model.id;
+                          return (
+                            <button
+                              key={model.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedModel(model.id);
+                                setIsCustomMode(false);
+                                setIsModelDropdownOpen(false);
+                              }}
+                              className={`w-full text-left p-2 rounded-lg transition-colors cursor-pointer flex flex-col gap-0.5 ${
+                                isSelected
+                                  ? 'bg-purple-600/30 border border-purple-500/50 text-white'
+                                  : 'hover:bg-slate-800 text-slate-300'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-slate-100 flex items-center gap-1.5">
+                                  {model.name}
+                                  {isSelected && <Check className="w-3.5 h-3.5 text-purple-400" />}
+                                </span>
+                                {model.badge && (
+                                  <span className={`text-2xs px-1.5 py-0.5 rounded font-medium ${
+                                    model.badge === 'Khuyên dùng'
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                      : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                                  }`}>
+                                    {model.badge}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-2xs text-slate-400">{model.description}</span>
+                            </button>
+                          );
+                        })}
+
+                        {/* Custom Model Input Option */}
+                        <div className="mt-1 pt-1 border-t border-slate-800">
+                          <button
+                            type="button"
+                            onClick={() => setIsCustomMode(true)}
+                            className={`w-full text-left p-2 rounded-lg transition-colors cursor-pointer ${
+                              isCustomMode ? 'bg-purple-600/30 border border-purple-500/50 text-white' : 'hover:bg-slate-800 text-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-slate-200">Nhập mã Model khác</span>
+                              {isCustomMode && <Check className="w-3.5 h-3.5 text-purple-400" />}
+                            </div>
+                            <span className="text-2xs text-slate-400">Tùy chỉnh định danh model AI</span>
+                          </button>
+
+                          {isCustomMode && (
+                            <div className="mt-2 p-1.5">
+                              <input
+                                type="text"
+                                placeholder="vd: gemini-3.6-flash"
+                                value={customModel}
+                                onChange={(e) => setCustomModel(e.target.value)}
+                                className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Preset Buttons */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => generateReport('standup')}
-              disabled={loading}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                mode === 'standup' && report
-                  ? 'bg-purple-500 text-white shadow-sm'
-                  : 'bg-white/10 hover:bg-white/20 text-white'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>Báo cáo Standup</span>
-            </button>
+          {/* Action Buttons & Optional Custom Prompt */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pt-3 border-t border-white/10">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => generateReport('standup')}
+                disabled={loading}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  mode === 'standup' && reportData?.result
+                    ? 'bg-purple-500 text-white shadow-sm'
+                    : 'bg-white/10 hover:bg-white/20 text-white'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                <span>Báo cáo Standup</span>
+              </button>
+
+              <button
+                onClick={() => generateReport('risk')}
+                disabled={loading}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  mode === 'risk' && reportData?.result
+                    ? 'bg-purple-500 text-white shadow-sm'
+                    : 'bg-white/10 hover:bg-white/20 text-white'
+                }`}
+              >
+                <ShieldAlert className="w-4 h-4" />
+                <span>Phân tích Rủi ro & Blockers</span>
+              </button>
+
+              <button
+                onClick={() => generateReport('general')}
+                disabled={loading}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  mode === 'general' && reportData?.result
+                    ? 'bg-purple-500 text-white shadow-sm'
+                    : 'bg-white/10 hover:bg-white/20 text-white'
+                }`}
+              >
+                <Lightbulb className="w-4 h-4" />
+                <span>Tối ưu hóa PM</span>
+              </button>
+            </div>
 
             <button
-              onClick={() => generateReport('risk')}
-              disabled={loading}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                mode === 'risk' && report
-                  ? 'bg-purple-500 text-white shadow-sm'
-                  : 'bg-white/10 hover:bg-white/20 text-white'
-              }`}
+              onClick={() => setShowExtraPrompt(!showExtraPrompt)}
+              className="inline-flex items-center gap-1.5 text-2xs text-purple-200/80 hover:text-white px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer self-start md:self-auto transition-colors"
             >
-              <ShieldAlert className="w-4 h-4" />
-              <span>Phân tích Rủi ro & Blockers</span>
-            </button>
-
-            <button
-              onClick={() => generateReport('general')}
-              disabled={loading}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                mode === 'general' && report
-                  ? 'bg-purple-500 text-white shadow-sm'
-                  : 'bg-white/10 hover:bg-white/20 text-white'
-              }`}
-            >
-              <Lightbulb className="w-4 h-4" />
-              <span>Tối ưu hóa PM</span>
+              <Sliders className="w-3.5 h-3.5" />
+              <span>{showExtraPrompt ? 'Ẩn ghi chú thêm' : '+ Thêm lưu ý cho AI'}</span>
             </button>
           </div>
+
+          {/* Optional Extra Instruction for AI */}
+          {showExtraPrompt && (
+            <div className="bg-black/30 p-3 rounded-xl border border-white/10 space-y-1.5">
+              <label className="text-2xs text-purple-200/90 font-medium">
+                Yêu cầu bổ sung cho báo cáo (tùy chọn):
+              </label>
+              <input
+                type="text"
+                value={extraPrompt}
+                onChange={(e) => setExtraPrompt(e.target.value)}
+                placeholder="Ví dụ: Tập trung vào deadline ngày mai, hoặc nhấn mạnh vấn đề nhân sự..."
+                className="w-full bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400"
+              />
+            </div>
+          )}
         </div>
       </div>
 
       {/* Error notification */}
       {errorMsg && (
-        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span>{errorMsg}</span>
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-rose-600" />
+          <div className="space-y-1">
+            <p className="font-semibold text-rose-800">Không thể tạo báo cáo AI</p>
+            <p>{errorMsg}</p>
+            <p className="text-2xs text-rose-600/80 mt-1">
+              Gợi ý: Hãy thử chọn model <b>Gemini 3.6 Flash</b> hoặc <b>Gemini 3.1 Flash Lite</b> ở menu trên để nhận phản hồi nhanh nhất.
+            </p>
+          </div>
         </div>
       )}
 
@@ -139,19 +332,29 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
         <div className="bg-white p-12 rounded-xl border border-slate-200 text-center shadow-xs">
           <RefreshCw className="w-8 h-8 text-purple-600 animate-spin mx-auto mb-3" />
           <h3 className="text-sm font-bold text-slate-800">
-            Gemini đang phân tích {issues.length} công việc trong dự án...
+            {activeModelId} đang phân tích {issues.length} công việc trong dự án...
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            Đang tổng hợp tiến độ, phát hiện điểm nghẽn và soạn báo cáo PM
+            Đang tổng hợp tiến độ thực tế từ Redmine, phân tích rủi ro và biên soạn văn bản PM
           </p>
         </div>
       )}
 
+      {/* Fallback Notice */}
+      {!loading && reportData?.fallbackOccurred && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+          <Info className="w-4 h-4 text-amber-600 shrink-0" />
+          <span>
+            Hệ thống đã tự động chuyển sang mô hình <b>{reportData.usedModel}</b> do <b>{reportData.requestedModel}</b> đang chịu tải cao, đảm bảo báo cáo của bạn được phản hồi ngay lập tức.
+          </span>
+        </div>
+      )}
+
       {/* Report Container */}
-      {!loading && report && (
+      {!loading && reportData?.result && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3.5 bg-slate-50 border-b border-slate-200">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 bg-slate-50 border-b border-slate-200">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="w-2.5 h-2.5 rounded-full bg-purple-600" />
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                 {mode === 'standup'
@@ -160,34 +363,50 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
                   ? 'Báo cáo Kiểm toán Rủi ro & Điểm nghẽn'
                   : 'Đề xuất tối ưu quy trình PM'}
               </h3>
+              {reportData.usedModel && (
+                <span className="text-2xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium border border-purple-200">
+                  Model: {reportData.usedModel}
+                </span>
+              )}
             </div>
 
-            <button
-              onClick={copyToClipboard}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="text-emerald-700">Đã sao chép!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Sao chép báo cáo</span>
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => generateReport(mode)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+                title="Tạo lại báo cáo mới"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                <span>Tạo lại</span>
+              </button>
+
+              <button
+                onClick={copyToClipboard}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-emerald-700">Đã sao chép!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Sao chép báo cáo</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="p-6 text-sm text-slate-800 leading-relaxed whitespace-pre-wrap font-sans">
-            {report}
+            {reportData.result}
           </div>
         </div>
       )}
 
       {/* Empty State / Call to Action */}
-      {!loading && !report && (
+      {!loading && !reportData?.result && (
         <div className="bg-white p-12 rounded-xl border border-slate-200 text-center shadow-xs space-y-4">
           <div className="w-14 h-14 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mx-auto border border-purple-200">
             <Zap className="w-7 h-7" />
@@ -197,7 +416,7 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
               Sẵn sàng tạo báo cáo thông minh cho PM
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              Bấm vào các nút phía trên để AI tự động đọc dữ liệu công việc hiện tại trên AnyBIM Redmine và soạn báo cáo chỉ trong vài giây.
+              Bạn có thể tùy chọn model AI (Gemini 3.6 Flash, 3.1 Flash Lite, 3.8 Flash) và bấm các nút phía trên để tạo báo cáo nhanh chóng từ Redmine.
             </p>
           </div>
           <button
@@ -205,7 +424,7 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
           >
             <Sparkles className="w-4 h-4" />
-            <span>Tạo báo cáo Standup ngay</span>
+            <span>Tạo báo cáo Standup ngay ({currentModelMeta?.name || activeModelId})</span>
           </button>
         </div>
       )}

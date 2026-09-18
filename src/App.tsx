@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   getCurrentUser,
   getProjects,
-  getIssues,
+  fetchAllIssues,
   getStatuses,
   getTrackers,
   getPriorities,
@@ -11,6 +11,8 @@ import {
   getTimeEntries,
   updateIssue,
   getStoredConfig,
+  getDateFilterQuery,
+  FetchProgress,
 } from './services/redmineApi';
 import {
   RedmineUser,
@@ -42,6 +44,8 @@ export default function App() {
   const [projects, setProjects] = useState<RedmineProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('84'); // Hawee BIM by default or 'all'
   const [issues, setIssues] = useState<RedmineIssue[]>([]);
+  const [totalAvailableCount, setTotalAvailableCount] = useState<number>(0);
+  const [fetchProgress, setFetchProgress] = useState<FetchProgress | null>(null);
   const [statuses, setStatuses] = useState<RedmineStatus[]>([]);
   const [trackers, setTrackers] = useState<RedmineTracker[]>([]);
   const [priorities, setPriorities] = useState<RedminePriority[]>([]);
@@ -59,6 +63,9 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [showDeployModal, setShowDeployModal] = useState<boolean>(false);
 
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
   // Filters
   const [filters, setFilters] = useState<FilterState>({
     search: '',
@@ -69,6 +76,12 @@ export default function App() {
     versionId: 'all',
     onlyOverdue: false,
     onlyMyTasks: false,
+    timePeriod: 'all',
+    dateField: 'created_on',
+    specificMonth: defaultMonth,
+    customStart: '',
+    customEnd: '',
+    fetchLimit: 500,
   });
 
   const config = getStoredConfig();
@@ -112,37 +125,71 @@ export default function App() {
   }, [loadInitialData]);
 
   // Load project-specific data (issues, members, versions, time entries)
-  const loadProjectData = useCallback(async (projId: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const [issuesRes, mems, vers, times] = await Promise.all([
-        getIssues({
-          project_id: projId === 'all' ? undefined : projId,
-          limit: 100,
-          status_id: '*',
-        }),
-        getMemberships(projId),
-        getVersions(projId),
-        getTimeEntries(projId),
-      ]);
+  const loadProjectData = useCallback(
+    async (projId: string, currentFilters: FilterState = filters) => {
+      setIsLoading(true);
+      setError(null);
+      setFetchProgress(null);
 
-      setIssues(issuesRes.issues);
-      setMemberships(mems);
-      setVersions(vers);
-      setTimeEntries(times);
-    } catch (err: any) {
-      setError(err.message || 'Lỗi khi tải dữ liệu công việc từ Redmine');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+      try {
+        const dateQuery = getDateFilterQuery(
+          currentFilters.timePeriod,
+          currentFilters.dateField,
+          {
+            specificMonth: currentFilters.specificMonth,
+            customStart: currentFilters.customStart,
+            customEnd: currentFilters.customEnd,
+          }
+        );
 
+        const maxTotalNum = currentFilters.fetchLimit === 'all' ? 5000 : currentFilters.fetchLimit;
+
+        const [issuesRes, mems, vers, times] = await Promise.all([
+          fetchAllIssues(
+            {
+              project_id: projId === 'all' ? undefined : projId,
+              status_id: '*',
+              ...dateQuery,
+            },
+            (prog: FetchProgress) => setFetchProgress(prog),
+            maxTotalNum
+          ),
+          getMemberships(projId).catch(() => []),
+          getVersions(projId).catch(() => []),
+          getTimeEntries(projId).catch(() => []),
+        ]);
+
+        setIssues(issuesRes.issues);
+        setTotalAvailableCount(issuesRes.total_count);
+        setMemberships(mems);
+        setVersions(vers);
+        setTimeEntries(times);
+      } catch (err: any) {
+        setError(err.message || 'Lỗi khi tải dữ liệu công việc từ Redmine');
+      } finally {
+        setIsLoading(false);
+        setFetchProgress(null);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filters.timePeriod, filters.dateField, filters.specificMonth, filters.customStart, filters.customEnd, filters.fetchLimit]
+  );
+
+  // Trigger fetch when project or time filters change
   useEffect(() => {
     if (selectedProjectId) {
-      loadProjectData(selectedProjectId);
+      loadProjectData(selectedProjectId, filters);
     }
-  }, [selectedProjectId, loadProjectData]);
+  }, [
+    selectedProjectId,
+    filters.timePeriod,
+    filters.dateField,
+    filters.specificMonth,
+    filters.customStart,
+    filters.customEnd,
+    filters.fetchLimit,
+    loadProjectData,
+  ]);
 
   // Handle quick status change on Kanban or Table
   const handleQuickStatusChange = async (issueId: number, newStatusId: number) => {
@@ -167,7 +214,7 @@ export default function App() {
     } catch (err: any) {
       console.error('Failed to change status:', err);
       // Revert by re-fetching
-      loadProjectData(selectedProjectId);
+      loadProjectData(selectedProjectId, filters);
     }
   };
 
@@ -247,7 +294,7 @@ export default function App() {
         onSelectProject={(id) => setSelectedProjectId(id)}
         activeView={activeView}
         onSelectView={(v) => setActiveView(v)}
-        onRefresh={() => loadProjectData(selectedProjectId)}
+        onRefresh={() => loadProjectData(selectedProjectId, filters)}
         isLoading={isLoading}
         onOpenCreate={() => setShowCreateModal(true)}
         onOpenSettings={() => setShowSettingsModal(true)}
@@ -265,7 +312,7 @@ export default function App() {
               <span>{error}</span>
             </div>
             <button
-              onClick={() => loadProjectData(selectedProjectId)}
+              onClick={() => loadProjectData(selectedProjectId, filters)}
               className="font-bold underline text-rose-700 hover:text-rose-900 cursor-pointer"
             >
               Thử lại
@@ -273,7 +320,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Filters bar: shown for Kanban and List */}
+        {/* Filters bar: shown for Kanban, List, and Analytics */}
         {(activeView === 'kanban' || activeView === 'list') && (
           <FilterBar
             filters={filters}
@@ -284,7 +331,16 @@ export default function App() {
             memberships={memberships}
             versions={versions}
             currentUserId={currentUser?.id}
-            totalResults={filteredIssues.length}
+            totalLoaded={issues.length}
+            totalAvailable={totalAvailableCount}
+            isLoading={isLoading}
+            fetchProgress={fetchProgress}
+            onFetchAll={() => {
+              const updatedFilters: FilterState = { ...filters, fetchLimit: 'all' };
+              setFilters(updatedFilters);
+              loadProjectData(selectedProjectId, updatedFilters);
+            }}
+            onRefresh={() => loadProjectData(selectedProjectId, filters)}
           />
         )}
 
@@ -326,7 +382,7 @@ export default function App() {
             timeEntries={timeEntries}
             issues={issues}
             selectedProject={selectedProject}
-            onRefresh={() => loadProjectData(selectedProjectId)}
+            onRefresh={() => loadProjectData(selectedProjectId, filters)}
           />
         )}
 
@@ -346,7 +402,7 @@ export default function App() {
           priorities={priorities}
           memberships={memberships}
           onClose={() => setSelectedIssueForModal(null)}
-          onUpdated={() => loadProjectData(selectedProjectId)}
+          onUpdated={() => loadProjectData(selectedProjectId, filters)}
           baseUrl={config.baseUrl}
         />
       )}
@@ -360,7 +416,7 @@ export default function App() {
           memberships={memberships}
           versions={versions}
           onClose={() => setShowCreateModal(false)}
-          onCreated={() => loadProjectData(selectedProjectId)}
+          onCreated={() => loadProjectData(selectedProjectId, filters)}
         />
       )}
 
@@ -369,7 +425,7 @@ export default function App() {
           onClose={() => setShowSettingsModal(false)}
           onSaved={() => {
             loadInitialData();
-            loadProjectData(selectedProjectId);
+            loadProjectData(selectedProjectId, filters);
           }}
         />
       )}
@@ -380,3 +436,4 @@ export default function App() {
     </div>
   );
 }
+
