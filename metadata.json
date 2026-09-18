@@ -1,0 +1,6 @@
+{
+  "name": "Redmine PM Workspace",
+  "description": "Bảng điều khiển quản lý dự án, công việc và tiến độ Redmine tối ưu cho Project Manager kết nối AnyBIM Redmine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
