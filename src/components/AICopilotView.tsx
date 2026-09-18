@@ -321,7 +321,7 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
             <p className="font-semibold text-rose-800">Không thể tạo báo cáo AI</p>
             <p>{errorMsg}</p>
             <p className="text-2xs text-rose-600/80 mt-1">
-              Gợi ý: Hãy kiểm tra đã cấu hình <b>Gemini API Key</b> trong menu Cài đặt (biểu tượng ⚙️ góc trên) hoặc thử chọn model <b>Gemini 2.5 Flash</b>.
+              Khóa Gemini được cấu hình trong menu Cài đặt (⚙️). Nếu thông báo là hết quota hoặc quá thời gian chờ, hãy kiểm tra quota hoặc thử lại sau.
             </p>
           </div>
         </div>
@@ -345,7 +345,7 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
           <Info className="w-4 h-4 text-amber-600 shrink-0" />
           <span>
-            Hệ thống đã tự động chuyển sang mô hình <b>{reportData.usedModel}</b> do <b>{reportData.requestedModel}</b> đang chịu tải cao, đảm bảo báo cáo của bạn được phản hồi ngay lập tức.
+            Báo cáo được tạo bằng model dự phòng <b>{reportData.usedModel}</b> vì model <b>{reportData.requestedModel}</b> chưa phản hồi thành công.
           </span>
         </div>
       )}
@@ -416,7 +416,7 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
               Sẵn sàng tạo báo cáo thông minh cho PM
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              Bạn có thể tùy chọn model AI (Gemini 3.6 Flash, 3.1 Flash Lite, 3.8 Flash) và bấm các nút phía trên để tạo báo cáo nhanh chóng từ Redmine.
+              Chọn model AI và loại báo cáo phía trên để tổng hợp thống kê và các công việc mẫu từ Redmine.
             </p>
           </div>
           <button

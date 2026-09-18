@@ -15,6 +15,8 @@ import {
   DateFieldType,
 } from '../types/redmine';
 
+import { buildAIReportPayload, readAIReportResponse } from './aiPayload';
+
 const STORAGE_KEY_URL = 'redmine_pm_base_url';
 const STORAGE_KEY_API_KEY = 'redmine_pm_api_key';
 
@@ -629,15 +631,15 @@ export const AVAILABLE_AI_MODELS: AIModelOption[] = [
     isDefault: true,
   },
   {
-    id: 'gemini-2.0-flash',
-    name: 'Gemini 2.0 Flash',
-    description: 'Tốc độ cực cao, xử lý ổn định dữ liệu Redmine',
+    id: 'gemini-2.5-flash-lite',
+    name: 'Gemini 2.5 Flash-Lite',
+    description: 'Model nhẹ cho báo cáo ngắn',
     badge: 'Tốc độ cao',
   },
   {
-    id: 'gemini-1.5-flash',
-    name: 'Gemini 1.5 Flash',
-    description: 'Mô hình Flash tiêu chuẩn đa năng của Google',
+    id: 'gemini-3.1-flash-lite',
+    name: 'Gemini 3.1 Flash-Lite',
+    description: 'Model Flash-Lite thế hệ mới',
   },
   {
     id: 'gemini-2.5-pro',
@@ -665,13 +667,9 @@ export async function askGeminiPM(
   const res = await fetch('/api/gemini/pm-insights', {
     method: 'POST',
     headers,
-    body: JSON.stringify({ mode, projectName, issues, statistics, model }),
+    body: JSON.stringify(buildAIReportPayload(mode, projectName, issues, statistics, model)),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Không thể tạo báo cáo AI lúc này');
-  }
-  const data = await res.json();
+  const data = await readAIReportResponse(res);
   return {
     result: data.result || '',
     usedModel: data.usedModel,

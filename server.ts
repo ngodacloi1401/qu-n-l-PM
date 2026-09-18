@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
+import { geminiErrorResponse } from './lib/geminiErrors';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -12,7 +13,11 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));
+app.use((error: any, _req: Request, res: Response, next: any) => {
+  if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'Dữ liệu báo cáo quá lớn. Hãy tải lại trang để dùng phiên bản mới.' });
+  next(error);
+});
 
 // Redmine credentials helper
 const getRedmineConfig = (req: Request) => {
@@ -320,6 +325,8 @@ app.post('/api/gemini/pm-insights', async (req: Request, res: Response) => {
     const ai = new GoogleGenAI({
       apiKey,
       httpOptions: {
+        timeout: 25000,
+        retryOptions: { attempts: 1 },
         headers: {
           'User-Agent': 'aistudio-build',
         },
@@ -364,7 +371,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
 
     // Fallback chain in case of model spike / 503 high demand / availability issues
     const candidateModels: string[] = [primaryModel];
-    for (const m of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-pro']) {
+    for (const m of [primaryModel === 'gemini-2.5-flash' ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash']) {
       if (!candidateModels.includes(m)) {
         candidateModels.push(m);
       }
@@ -381,11 +388,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
           model: candidate,
           contents: prompt,
         });
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error(`Model ${candidate} timed out after 25s`)), 25000);
-        });
-
-        const response: any = await Promise.race([generatePromise, timeoutPromise]);
+        const response: any = await generatePromise;
         if (response && response.text) {
           responseText = response.text;
           resolvedModel = candidate;
@@ -394,13 +397,14 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
         }
       } catch (err: any) {
         lastError = err;
-        console.warn(`[AI Route] Model ${candidate} failed:`, err.message || err);
+        if (![404, 500, 502, 503, 504].includes(Number(err?.status || err?.code))) break;
+        console.warn(`[AI Route] Model ${candidate} failed:`, geminiErrorResponse(err).status);
       }
     }
 
     if (!responseText) {
-      const errMsg = lastError?.message || 'Không thể tạo báo cáo với model hiện tại';
-      return res.status(500).json({ error: errMsg });
+      const failure = geminiErrorResponse(lastError);
+      return res.status(failure.status).json({ error: failure.error });
     }
 
     return res.json({
@@ -410,8 +414,9 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
       fallbackOccurred: resolvedModel !== primaryModel,
     });
   } catch (error: any) {
-    console.error('Gemini error:', error);
-    return res.status(500).json({ error: error.message || 'Gemini processing failed' });
+    console.error('Gemini request failed:', geminiErrorResponse(error).status);
+    const failure = geminiErrorResponse(error);
+    return res.status(failure.status).json({ error: failure.error });
   }
 });
 
