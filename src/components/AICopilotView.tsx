@@ -10,7 +10,6 @@ import {
   AlertCircle,
   Lightbulb,
   Cpu,
-  ChevronDown,
   Info,
   Sliders,
 } from 'lucide-react';
@@ -36,9 +35,14 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
     }
     return 'gemini-2.5-flash';
   });
-  const [customModel, setCustomModel] = useState<string>('');
-  const [isCustomMode, setIsCustomMode] = useState<boolean>(false);
-  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const [customModel, setCustomModel] = useState<string>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_MODEL);
+    return saved && !AVAILABLE_AI_MODELS.some(m => m.id === saved) ? saved : '';
+  });
+  const [isCustomMode, setIsCustomMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_MODEL);
+    return !!saved && !AVAILABLE_AI_MODELS.some(m => m.id === saved);
+  });
 
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState<GeminiPMResponse | null>(null);
@@ -56,10 +60,11 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
     }
   }, [selectedModel, customModel, isCustomMode]);
 
-  const activeModelId = isCustomMode ? (customModel.trim() || 'gemini-3.6-flash') : selectedModel;
+  const activeModelId = isCustomMode ? customModel.trim() : selectedModel;
   const currentModelMeta = AVAILABLE_AI_MODELS.find((m) => m.id === selectedModel);
 
   const generateReport = async (chosenMode: 'standup' | 'risk' | 'general') => {
+    if (!activeModelId) { setErrorMsg('Nhập mã model AI trước khi tạo báo cáo.'); return; }
     setLoading(true);
     setErrorMsg(null);
     setMode(chosenMode);
@@ -123,7 +128,7 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
                   <h2 className="text-lg font-bold">AI PM Copilot Workspace</h2>
                   <span className="bg-purple-500/30 text-purple-200 text-xs px-2.5 py-0.5 rounded-full border border-purple-400/30 flex items-center gap-1">
                     <Cpu className="w-3 h-3" />
-                    <span>{currentModelMeta?.name || activeModelId}</span>
+                    <span>{isCustomMode ? (activeModelId || "Chưa nhập model") : currentModelMeta?.name || activeModelId}</span>
                   </span>
                 </div>
                 <p className="text-xs text-purple-200/80 mt-1">
@@ -132,114 +137,30 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
               </div>
             </div>
 
-            {/* Model Selector Pill / Dropdown */}
-            <div className="relative self-start md:self-auto">
-              <div className="flex items-center gap-2 bg-black/30 backdrop-blur-xs p-1 rounded-xl border border-white/10">
-                <div className="px-2 py-1 text-2xs uppercase tracking-wider text-purple-200/70 font-semibold flex items-center gap-1">
-                  <Cpu className="w-3 h-3 text-purple-300" />
-                  <span>Model AI:</span>
-                </div>
-
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/15 text-white rounded-lg text-xs font-medium border border-white/10 transition-colors cursor-pointer"
-                  >
-                    <span className="font-semibold text-purple-200">
-                      {isCustomMode ? `Tùy chọn: ${customModel || 'Chưa nhập'}` : currentModelMeta?.name || selectedModel}
-                    </span>
-                    {currentModelMeta?.badge && (
-                      <span className="bg-emerald-500/30 text-emerald-300 text-2xs px-1.5 py-0.5 rounded border border-emerald-400/30 font-medium">
-                        {currentModelMeta.badge}
-                      </span>
-                    )}
-                    <ChevronDown className={`w-3.5 h-3.5 text-purple-300 transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`} />
-                  </button>
-
-                  {/* Dropdown Menu */}
-                  {isModelDropdownOpen && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-40"
-                        onClick={() => setIsModelDropdownOpen(false)}
-                      />
-                      <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 p-2 text-slate-100 text-xs">
-                        <div className="px-2 py-1.5 text-2xs text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800 mb-1 flex items-center justify-between">
-                          <span>Chọn Model Gemini</span>
-                          <span className="text-purple-400">@google/genai</span>
-                        </div>
-
-                        {AVAILABLE_AI_MODELS.map((model) => {
-                          const isSelected = !isCustomMode && selectedModel === model.id;
-                          return (
-                            <button
-                              key={model.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedModel(model.id);
-                                setIsCustomMode(false);
-                                setIsModelDropdownOpen(false);
-                              }}
-                              className={`w-full text-left p-2 rounded-lg transition-colors cursor-pointer flex flex-col gap-0.5 ${
-                                isSelected
-                                  ? 'bg-purple-600/30 border border-purple-500/50 text-white'
-                                  : 'hover:bg-slate-800 text-slate-300'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="font-semibold text-slate-100 flex items-center gap-1.5">
-                                  {model.name}
-                                  {isSelected && <Check className="w-3.5 h-3.5 text-purple-400" />}
-                                </span>
-                                {model.badge && (
-                                  <span className={`text-2xs px-1.5 py-0.5 rounded font-medium ${
-                                    model.badge === 'Khuyên dùng'
-                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                      : 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                                  }`}>
-                                    {model.badge}
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-2xs text-slate-400">{model.description}</span>
-                            </button>
-                          );
-                        })}
-
-                        {/* Custom Model Input Option */}
-                        <div className="mt-1 pt-1 border-t border-slate-800">
-                          <button
-                            type="button"
-                            onClick={() => setIsCustomMode(true)}
-                            className={`w-full text-left p-2 rounded-lg transition-colors cursor-pointer ${
-                              isCustomMode ? 'bg-purple-600/30 border border-purple-500/50 text-white' : 'hover:bg-slate-800 text-slate-300'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-slate-200">Nhập mã Model khác</span>
-                              {isCustomMode && <Check className="w-3.5 h-3.5 text-purple-400" />}
-                            </div>
-                            <span className="text-2xs text-slate-400">Tùy chỉnh định danh model AI</span>
-                          </button>
-
-                          {isCustomMode && (
-                            <div className="mt-2 p-1.5">
-                              <input
-                                type="text"
-                                placeholder="vd: gemini-3.6-flash"
-                                value={customModel}
-                                onChange={(e) => setCustomModel(e.target.value)}
-                                className="w-full bg-slate-950 border border-slate-700 rounded-md px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
+            <div className="flex flex-col gap-2 w-full md:w-72">
+              <label htmlFor="ai-model-select" className="text-xs text-purple-200">Model AI</label>
+              <select
+                id="ai-model-select"
+                value={isCustomMode ? 'custom' : selectedModel}
+                disabled={loading}
+                onChange={e => {
+                  const value = e.target.value;
+                  setIsCustomMode(value === 'custom');
+                  if (value !== 'custom') setSelectedModel(value);
+                }}
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs text-white"
+              >
+                {AVAILABLE_AI_MODELS.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
+                <option value="custom">Nhập mã Model khác</option>
+              </select>
+              {isCustomMode && <input
+                aria-label="Mã model AI tùy chỉnh"
+                placeholder="vd: gemini-2.5-flash"
+                value={customModel}
+                disabled={loading}
+                onChange={e => setCustomModel(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs text-white"
+              />}
             </div>
           </div>
 
