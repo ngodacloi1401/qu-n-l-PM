@@ -37,13 +37,13 @@ import { TableView } from './components/TableView';
 import { DashboardAnalytics } from './components/DashboardAnalytics';
 import { TimeTrackingView } from './components/TimeTrackingView';
 import { OTReportView } from './components/OTReportView';
-import { TrackerExplorer } from './components/TrackerExplorer';
 import { AICopilotView } from './components/AICopilotView';
 import { IssueDetailModal } from './components/IssueDetailModal';
 import { CreateIssueModal } from './components/CreateIssueModal';
 import { SettingsModal } from './components/SettingsModal';
 import { DeployModal } from './components/DeployModal';
 import { AlertCircle, RefreshCw, Layers } from 'lucide-react';
+import { isIssueClosed, vietnamToday } from './services/pmAnalytics';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<RedmineUser | null>(null);
@@ -147,6 +147,8 @@ export default function App() {
       setError(null);
       setFetchProgress(null);
       setSnapshotAt(0);
+      setIssues([]);
+      setTotalAvailableCount(0);
 
       try {
         const dateQuery = getDateFilterQuery(
@@ -256,7 +258,7 @@ export default function App() {
 
   // Filter issues client-side for ultra-fast, smooth, zero-reload response
   const filteredIssues = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = vietnamToday();
 
     return issues.filter((iss) => {
       // Search
@@ -276,8 +278,7 @@ export default function App() {
       // Status
       if (filters.statusId !== 'all') {
         if (filters.statusId === 'open') {
-          const sName = iss.status.name.toLowerCase();
-          if (sName.includes('close') || sName.includes('verified')) return false;
+          if (isIssueClosed(iss, statuses)) return false;
         } else {
           if (String(iss.status.id) !== String(filters.statusId)) return false;
         }
@@ -305,8 +306,7 @@ export default function App() {
       // Overdue
       if (filters.onlyOverdue) {
         if (!iss.due_date || iss.due_date >= today) return false;
-        const sName = iss.status.name.toLowerCase();
-        if (sName.includes('close') || sName.includes('verified')) return false;
+        if (isIssueClosed(iss, statuses)) return false;
       }
 
       // Only My Tasks
@@ -316,7 +316,7 @@ export default function App() {
 
       return true;
     });
-  }, [issues, filters, currentUser]);
+  }, [issues, filters, currentUser, statuses]);
 
   const selectedProject = projects.find((p) => String(p.id) === selectedProjectId);
 
@@ -357,7 +357,7 @@ export default function App() {
         )}
 
         {/* Filters bar: shown for Kanban, List, and Analytics */}
-        {!!snapshotAt && (activeView === 'kanban' || activeView === 'list') && <div className="mb-3 flex flex-wrap justify-between gap-2 text-xs text-slate-500">
+        {!!snapshotAt && (activeView === 'kanban' || activeView === 'list' || activeView === 'analytics') && <div className="mb-3 flex flex-wrap justify-between gap-2 text-xs text-slate-500">
           <span>Dữ liệu lưu trên trình duyệt: {issues.length}/{totalAvailableCount} công việc · {new Date(snapshotAt).toLocaleString('vi-VN')}{isLoading ? ' · Đang đồng bộ…' : ''}</span>
           <button className="text-indigo-600 underline" onClick={() => {
             const blob = new Blob([JSON.stringify({ schemaVersion: 1, projectId: selectedProjectId, snapshotAt: new Date(snapshotAt).toISOString(), loadedCount: issues.length, totalAvailableCount, issues }, null, 2)], { type: 'application/json' });
@@ -366,7 +366,7 @@ export default function App() {
             document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
           }}>Xuất dữ liệu đã tải (JSON)</button>
         </div>}
-        {(activeView === 'kanban' || activeView === 'list') && (
+        {(activeView === 'kanban' || activeView === 'list' || activeView === 'analytics' || activeView === 'ai') && (
           <FilterBar
             filters={filters}
             onFilterChange={setFilters}
@@ -414,7 +414,9 @@ export default function App() {
 
         {activeView === 'analytics' && (
           <DashboardAnalytics
-            issues={issues}
+            issues={filteredIssues}
+            loadedCount={issues.length}
+            totalAvailable={totalAvailableCount}
             versions={versions}
             statuses={statuses}
             onSelectIssue={(iss) => setSelectedIssueForModal(iss)}
@@ -434,16 +436,18 @@ export default function App() {
           <OTReportView key={`${selectedProjectId}:${config.baseUrl}:${config.apiKey}`} projectId={selectedProjectId} projectName={selectedProject?.name || 'Tất cả dự án'} baseUrl={config.baseUrl} onSelectIssue={setSelectedIssueForModal} />
         )}
 
-        {activeView === 'trackers' && (
-          <TrackerExplorer key={`${selectedProjectId}:${config.baseUrl}:${config.apiKey}`} trackers={trackers} projectId={selectedProjectId} baseUrl={config.baseUrl} onSelectIssue={setSelectedIssueForModal} />
-        )}
-
-        {activeView === 'ai' && (
+        <div hidden={activeView !== 'ai'}>
           <AICopilotView
-            issues={issues}
+            key={`${selectedProjectId}:${config.baseUrl}:${config.apiKey}`}
+            projectId={selectedProjectId}
+            isDataLoading={isLoading}
+            totalAvailable={totalAvailableCount}
+            statuses={statuses}
+            issues={filteredIssues}
+            scope={{ loadedCount: issues.length, filters: { ...filters } }}
             selectedProject={selectedProject}
           />
-        )}
+        </div>
       </main>
 
       {/* Modals */}

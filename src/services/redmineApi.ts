@@ -15,7 +15,7 @@ import {
   DateFieldType,
 } from '../types/redmine';
 
-import { buildAIReportPayload, readAIReportResponse } from './aiPayload';
+import { buildAIReportPayload, buildAIChatPayload, readAIReportResponse, type ChatMessage, type ChatScope } from './aiPayload';
 import { readIssueListResponse } from './issueResponse';
 import { cacheScope, cacheRevision, invalidateAfterMutation, readLocalCache, writeLocalCache } from './localCache';
 import { loadIssueSnapshot, issueQueryKey, IssueCacheOptions, IssueSnapshot } from './issueCache';
@@ -708,6 +708,11 @@ export interface GeminiPMResponse {
   usedModel?: string;
   requestedModel?: string;
   fallbackOccurred?: boolean;
+}
+
+export async function askGeminiChat(messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}): Promise<GeminiPMResponse> {
+  const res = await fetch('/api/gemini/pm-insights', { method: 'POST', headers: getHeaders(), body: JSON.stringify(buildAIChatPayload(messages, projectName, issues, statuses, totalAvailable, model, scope)) });
+  return readAIReportResponse(res);
 }
 
 export async function askGeminiPM(

@@ -1,354 +1,109 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Sparkles,
-  FileText,
-  ShieldAlert,
-  Zap,
-  Copy,
-  Check,
-  RefreshCw,
-  AlertCircle,
-  Lightbulb,
-  Cpu,
-  Info,
-  Sliders,
-} from 'lucide-react';
-import { RedmineIssue, RedmineProject } from '../types/redmine';
-import { askGeminiPM, AVAILABLE_AI_MODELS, GeminiPMResponse } from '../services/redmineApi';
+import React, { useEffect, useRef, useState } from 'react';
+import { Send, Plus, Sparkles } from 'lucide-react';
+import type { RedmineIssue, RedmineProject, RedmineStatus } from '../types/redmine';
+import { AVAILABLE_AI_MODELS, askGeminiChat, getStoredConfig } from '../services/redmineApi';
+import type { ChatMessage, ChatScope } from '../services/aiPayload';
+import { cacheScope, readLocalCache, writeLocalCache } from '../services/localCache';
 
-interface AICopilotViewProps {
-  issues: RedmineIssue[];
-  selectedProject: RedmineProject | undefined;
-}
+interface Session { id: string; title: string; messages: ChatMessage[] }
+interface SessionStore { sessions: Session[]; activeId: string }
+const newSession = (): Session => ({ id: crypto.randomUUID(), title: 'Phiên mới', messages: [] });
+const MODEL_KEY = 'redmine_ai_model';
+const savedModel = () => localStorage.getItem(MODEL_KEY) || 'gemini-2.5-flash';
 
-const STORAGE_KEY_MODEL = 'redmine_ai_model';
+export function AICopilotView({ issues, statuses, selectedProject, projectId, totalAvailable, isDataLoading, scope }: {
+  issues: RedmineIssue[]; statuses: RedmineStatus[]; selectedProject: RedmineProject | undefined; projectId: string; totalAvailable: number; isDataLoading: boolean; scope: ChatScope;
+}) {
+  const [model, setModel] = useState(savedModel);
+  const [custom, setCustom] = useState(() => AVAILABLE_AI_MODELS.some(m => m.id === savedModel()) ? '' : savedModel());
+  const [customMode, setCustomMode] = useState(() => !AVAILABLE_AI_MODELS.some(m => m.id === savedModel()));
+  const [store, setStore] = useState<SessionStore>({ sessions: [], activeId: '' });
+  const [storageKey, setStorageKey] = useState('');
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const lock = useRef(false);
+  const alive = useRef(true);
+  const bottom = useRef<HTMLDivElement>(null);
+  const active = store.sessions.find(s => s.id === store.activeId);
+  const activeModel = customMode ? custom.trim() : model;
 
-export const AICopilotView: React.FC<AICopilotViewProps> = ({
-  issues,
-  selectedProject,
-}) => {
-  const [mode, setMode] = useState<'standup' | 'risk' | 'general'>('standup');
-  const [selectedModel, setSelectedModel] = useState<string>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_MODEL);
-    if (saved && AVAILABLE_AI_MODELS.some((m) => m.id === saved)) {
-      return saved;
-    }
-    return 'gemini-2.5-flash';
-  });
-  const [customModel, setCustomModel] = useState<string>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_MODEL);
-    return saved && !AVAILABLE_AI_MODELS.some(m => m.id === saved) ? saved : '';
-  });
-  const [isCustomMode, setIsCustomMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_MODEL);
-    return !!saved && !AVAILABLE_AI_MODELS.some(m => m.id === saved);
-  });
-
-  const [loading, setLoading] = useState(false);
-  const [reportData, setReportData] = useState<GeminiPMResponse | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [extraPrompt, setExtraPrompt] = useState('');
-  const [showExtraPrompt, setShowExtraPrompt] = useState(false);
-
-  // Sync model to localStorage
   useEffect(() => {
-    if (!isCustomMode) {
-      localStorage.setItem(STORAGE_KEY_MODEL, selectedModel);
-    } else if (customModel.trim()) {
-      localStorage.setItem(STORAGE_KEY_MODEL, customModel.trim());
-    }
-  }, [selectedModel, customModel, isCustomMode]);
+    let cancelled = false;
+    alive.current = true;
+    (async () => {
+      const config = getStoredConfig();
+      const key = `${await cacheScope(config.baseUrl, config.apiKey)}:ai-sessions:${projectId}`;
+      const saved = await readLocalCache<SessionStore>(key);
+      if (cancelled) return;
+      if (saved?.sessions?.length) setStore({ sessions: saved.sessions, activeId: saved.sessions.some(s => s.id === saved.activeId) ? saved.activeId : saved.sessions[0].id });
+      else { const session = newSession(); setStore({ sessions: [session], activeId: session.id }); }
+      setStorageKey(key);
+    })().catch(() => { if (!cancelled) setError('Không thể mở phiên AI. Hãy tải lại trang.'); });
+    return () => { cancelled = true; alive.current = false; };
+  }, [projectId]);
+  useEffect(() => { if (storageKey && store.sessions.length) void writeLocalCache(storageKey, store); }, [storageKey, store]);
+  useEffect(() => { if (activeModel) localStorage.setItem(MODEL_KEY, activeModel); }, [activeModel]);
+  useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }); }, [active?.messages.length, busy]);
 
-  const activeModelId = isCustomMode ? customModel.trim() : selectedModel;
-  const currentModelMeta = AVAILABLE_AI_MODELS.find((m) => m.id === selectedModel);
-
-  const generateReport = async (chosenMode: 'standup' | 'risk' | 'general') => {
-    if (!activeModelId) { setErrorMsg('Nhập mã model AI trước khi tạo báo cáo.'); return; }
-    setLoading(true);
-    setErrorMsg(null);
-    setMode(chosenMode);
-
+  const submit = async (text: string, retry = false) => {
+    if (lock.current || isDataLoading || !active || !storageKey || !text.trim()) return;
+    if (!activeModel) { setError('Nhập mã model AI trước khi gửi.'); return; }
+    lock.current = true; setBusy(true); setError('');
+    const messages: ChatMessage[] = retry ? active.messages : [...active.messages, { role: 'user', text: text.trim().slice(0, 4000) }];
+    const sessionId = active.id;
+    const pending = { ...store, sessions: store.sessions.map(s => s.id === sessionId ? { ...s, title: s.messages.length ? s.title : text.trim().slice(0, 60), messages } : s) };
+    setStore(pending); if (!retry) setDraft('');
+    await writeLocalCache(storageKey, pending);
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const stats = {
-        totalIssues: issues.length,
-        inProgressCount: issues.filter((i) => i.status.name.toLowerCase().includes('progress')).length,
-        closedCount: issues.filter((i) =>
-          i.status.name.toLowerCase().includes('close') || i.status.name.toLowerCase().includes('verified')
-        ).length,
-        overdueCount: issues.filter((i) => i.due_date && i.due_date < today && !i.status.name.toLowerCase().includes('close')).length,
-        blockedCount: issues.filter((i) =>
-          i.status.name.toLowerCase().includes('block') || i.status.name.toLowerCase().includes('fail')
-        ).length,
-      };
-
-      const projectName = selectedProject ? selectedProject.name : 'Dự án Redmine (Tất cả)';
-      
-      // If extra user notes provided, attach to request stats/context
-      const enrichedStats = extraPrompt.trim()
-        ? { ...stats, userNoteForAI: extraPrompt.trim() }
-        : stats;
-
-      const response = await askGeminiPM(
-        chosenMode,
-        projectName,
-        issues,
-        enrichedStats,
-        activeModelId
-      );
-
-      setReportData(response);
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Lỗi khi tạo báo cáo AI');
-    } finally {
-      setLoading(false);
-    }
+      const response = await askGeminiChat(messages, selectedProject?.name || 'Tất cả dự án', issues, statuses, totalAvailable, activeModel, scope);
+      const answer: ChatMessage = { role: 'assistant', text: response.result, model: response.usedModel || activeModel };
+      const latest = await readLocalCache<SessionStore>(storageKey) || pending;
+      const existing = latest.sessions.find(s => s.id === sessionId);
+      if (JSON.stringify(existing?.messages) === JSON.stringify(messages)) {
+        const completed = { ...latest, sessions: latest.sessions.map(s => s.id === sessionId ? { ...s, messages: [...messages, answer] } : s) };
+        await writeLocalCache(storageKey, completed);
+        if (alive.current) setStore(completed);
+      }
+    } catch (e: any) { if (alive.current) setError(e.message || 'Không thể nhận phản hồi AI.'); }
+    finally { lock.current = false; if (alive.current) setBusy(false); }
   };
 
-  const copyToClipboard = () => {
-    if (!reportData?.result) return;
-    navigator.clipboard.writeText(reportData.result);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Copilot Header */}
-      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 rounded-2xl p-6 text-white shadow-md relative overflow-hidden">
-        <div className="relative z-10 flex flex-col gap-5">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300 shrink-0">
-                <Sparkles className="w-6 h-6" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-lg font-bold">AI PM Copilot Workspace</h2>
-                  <span className="bg-purple-500/30 text-purple-200 text-xs px-2.5 py-0.5 rounded-full border border-purple-400/30 flex items-center gap-1">
-                    <Cpu className="w-3 h-3" />
-                    <span>{isCustomMode ? (activeModelId || "Chưa nhập model") : currentModelMeta?.name || activeModelId}</span>
-                  </span>
-                </div>
-                <p className="text-xs text-purple-200/80 mt-1">
-                  Tự động tổng hợp báo cáo Daily Standup, phân tích rủi ro & điểm nghẽn dự án AnyBIM
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 w-full md:w-72">
-              <label htmlFor="ai-model-select" className="text-xs text-purple-200">Model AI</label>
-              <select
-                id="ai-model-select"
-                value={isCustomMode ? 'custom' : selectedModel}
-                disabled={loading}
-                onChange={e => {
-                  const value = e.target.value;
-                  setIsCustomMode(value === 'custom');
-                  if (value !== 'custom') setSelectedModel(value);
-                }}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs text-white"
-              >
-                {AVAILABLE_AI_MODELS.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
-                <option value="custom">Nhập mã Model khác</option>
-              </select>
-              {isCustomMode && <input
-                aria-label="Mã model AI tùy chỉnh"
-                placeholder="vd: gemini-2.5-flash"
-                value={customModel}
-                disabled={loading}
-                onChange={e => setCustomModel(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-xs text-white"
-              />}
-            </div>
-          </div>
-
-          {/* Action Buttons & Optional Custom Prompt */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pt-3 border-t border-white/10">
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => generateReport('standup')}
-                disabled={loading}
-                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  mode === 'standup' && reportData?.result
-                    ? 'bg-purple-500 text-white shadow-sm'
-                    : 'bg-white/10 hover:bg-white/20 text-white'
-                }`}
-              >
-                <FileText className="w-4 h-4" />
-                <span>Báo cáo Standup</span>
-              </button>
-
-              <button
-                onClick={() => generateReport('risk')}
-                disabled={loading}
-                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  mode === 'risk' && reportData?.result
-                    ? 'bg-purple-500 text-white shadow-sm'
-                    : 'bg-white/10 hover:bg-white/20 text-white'
-                }`}
-              >
-                <ShieldAlert className="w-4 h-4" />
-                <span>Phân tích Rủi ro & Blockers</span>
-              </button>
-
-              <button
-                onClick={() => generateReport('general')}
-                disabled={loading}
-                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  mode === 'general' && reportData?.result
-                    ? 'bg-purple-500 text-white shadow-sm'
-                    : 'bg-white/10 hover:bg-white/20 text-white'
-                }`}
-              >
-                <Lightbulb className="w-4 h-4" />
-                <span>Tối ưu hóa PM</span>
-              </button>
-            </div>
-
-            <button
-              onClick={() => setShowExtraPrompt(!showExtraPrompt)}
-              className="inline-flex items-center gap-1.5 text-2xs text-purple-200/80 hover:text-white px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer self-start md:self-auto transition-colors"
-            >
-              <Sliders className="w-3.5 h-3.5" />
-              <span>{showExtraPrompt ? 'Ẩn ghi chú thêm' : '+ Thêm lưu ý cho AI'}</span>
-            </button>
-          </div>
-
-          {/* Optional Extra Instruction for AI */}
-          {showExtraPrompt && (
-            <div className="bg-black/30 p-3 rounded-xl border border-white/10 space-y-1.5">
-              <label className="text-2xs text-purple-200/90 font-medium">
-                Yêu cầu bổ sung cho báo cáo (tùy chọn):
-              </label>
-              <input
-                type="text"
-                value={extraPrompt}
-                onChange={(e) => setExtraPrompt(e.target.value)}
-                placeholder="Ví dụ: Tập trung vào deadline ngày mai, hoặc nhấn mạnh vấn đề nhân sự..."
-                className="w-full bg-slate-900/80 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400"
-              />
-            </div>
-          )}
-        </div>
+  return <div className="space-y-4">
+    <div className="bg-slate-900 text-white rounded-xl p-5 flex flex-wrap items-end justify-between gap-4">
+      <div><h2 className="font-bold flex items-center gap-2"><Sparkles className="w-5 h-5" />AI PM · Chat theo phiên</h2><p className="text-xs text-slate-300 mt-2">{selectedProject?.name || 'Tất cả dự án'} · Đang xem {issues.length} công việc theo bộ lọc · Đã tải {scope.loadedCount}/{totalAvailable}.{isDataLoading ? ' Đang đồng bộ dữ liệu…' : (scope.loadedCount ?? issues.length) < totalAvailable ? ' Chưa đủ dữ liệu toàn bộ phạm vi.' : ''}</p></div>
+      <div className="space-y-2 w-full sm:w-64">
+        <label htmlFor="ai-model-select" className="text-xs">Model AI</label>
+        <select id="ai-model-select" value={customMode ? 'custom' : model} disabled={busy} onChange={e => { setCustomMode(e.target.value === 'custom'); if (e.target.value !== 'custom') setModel(e.target.value); }} className="block w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm">
+          {AVAILABLE_AI_MODELS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}<option value="custom">Nhập mã Model khác</option>
+        </select>
+        {customMode && <input aria-label="Mã model AI tùy chỉnh" value={custom} onChange={e => setCustom(e.target.value)} disabled={busy} className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm" placeholder="vd: gemini-2.5-flash" />}
       </div>
-
-      {/* Error notification */}
-      {errorMsg && (
-        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2.5">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-rose-600" />
-          <div className="space-y-1">
-            <p className="font-semibold text-rose-800">Không thể tạo báo cáo AI</p>
-            <p>{errorMsg}</p>
-            <p className="text-2xs text-rose-600/80 mt-1">
-              Khóa Gemini được cấu hình trong menu Cài đặt (⚙️). Nếu thông báo là hết quota hoặc quá thời gian chờ, hãy kiểm tra quota hoặc thử lại sau.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Loading state */}
-      {loading && (
-        <div className="bg-white p-12 rounded-xl border border-slate-200 text-center shadow-xs">
-          <RefreshCw className="w-8 h-8 text-purple-600 animate-spin mx-auto mb-3" />
-          <h3 className="text-sm font-bold text-slate-800">
-            {activeModelId} đang phân tích {issues.length} công việc trong dự án...
-          </h3>
-          <p className="text-xs text-slate-500 mt-1">
-            Đang tổng hợp tiến độ thực tế từ Redmine, phân tích rủi ro và biên soạn văn bản PM
-          </p>
-        </div>
-      )}
-
-      {/* Fallback Notice */}
-      {!loading && reportData?.fallbackOccurred && (
-        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
-          <Info className="w-4 h-4 text-amber-600 shrink-0" />
-          <span>
-            Báo cáo được tạo bằng model dự phòng <b>{reportData.usedModel}</b> vì model <b>{reportData.requestedModel}</b> chưa phản hồi thành công.
-          </span>
-        </div>
-      )}
-
-      {/* Report Container */}
-      {!loading && reportData?.result && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5 bg-slate-50 border-b border-slate-200">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="w-2.5 h-2.5 rounded-full bg-purple-600" />
-              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                {mode === 'standup'
-                  ? 'Bản báo cáo Daily Standup dự án'
-                  : mode === 'risk'
-                  ? 'Báo cáo Kiểm toán Rủi ro & Điểm nghẽn'
-                  : 'Đề xuất tối ưu quy trình PM'}
-              </h3>
-              {reportData.usedModel && (
-                <span className="text-2xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium border border-purple-200">
-                  Model: {reportData.usedModel}
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => generateReport(mode)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-                title="Tạo lại báo cáo mới"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
-                <span>Tạo lại</span>
-              </button>
-
-              <button
-                onClick={copyToClipboard}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="text-emerald-700">Đã sao chép!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Sao chép báo cáo</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          <div className="p-6 text-sm text-slate-800 leading-relaxed whitespace-pre-wrap font-sans">
-            {reportData.result}
-          </div>
-        </div>
-      )}
-
-      {/* Empty State / Call to Action */}
-      {!loading && !reportData?.result && (
-        <div className="bg-white p-12 rounded-xl border border-slate-200 text-center shadow-xs space-y-4">
-          <div className="w-14 h-14 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mx-auto border border-purple-200">
-            <Zap className="w-7 h-7" />
-          </div>
-          <div className="max-w-md mx-auto">
-            <h3 className="text-base font-bold text-slate-900">
-              Sẵn sàng tạo báo cáo thông minh cho PM
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              Chọn model AI và loại báo cáo phía trên để tổng hợp thống kê và các công việc mẫu từ Redmine.
-            </p>
-          </div>
-          <button
-            onClick={() => generateReport('standup')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>Tạo báo cáo Standup ngay ({currentModelMeta?.name || activeModelId})</span>
-          </button>
-        </div>
-      )}
     </div>
-  );
-};
+    <div className="flex flex-wrap gap-2 items-center">
+      <label htmlFor="ai-session-select" className="text-sm">Phiên làm việc</label>
+      <select id="ai-session-select" value={store.activeId} disabled={busy || !storageKey} onChange={e => { setStore(s => ({ ...s, activeId: e.target.value })); setError(''); setDraft(''); }} className="border border-slate-300 bg-white rounded-lg p-2 text-sm max-w-xs">
+        {store.sessions.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
+      </select>
+      <button disabled={busy || !storageKey} onClick={() => { const session = newSession(); setStore(s => ({ sessions: [session, ...s.sessions], activeId: session.id })); setError(''); setDraft(''); }} className="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white disabled:opacity-40"><Plus className="w-4 h-4 inline mr-1" />Phiên mới</button>
+    </div>
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div role="log" aria-label="Lịch sử chat AI" aria-live="polite" className="p-4 space-y-4 max-h-[60vh] min-h-64 overflow-auto">
+        {!active?.messages.length && <p className="text-sm text-slate-500">Hỏi về tiến độ, công việc quá hạn, phân công hoặc một issue cụ thể như #40730. Bạn có thể hỏi tiếp dựa trên câu trả lời trước.</p>}
+        {active?.messages.map((m, index) => <div key={index} className={`rounded-xl p-3 text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-indigo-50 ml-6' : 'bg-slate-50 mr-6'}`}>
+          <p className="text-xs font-semibold text-slate-500 mb-2">{m.role === 'user' ? 'Bạn' : `AI · ${m.model || 'Gemini'}`}</p>{m.text}
+        </div>)}
+        {busy && <p role="status" className="text-sm text-indigo-600">AI đang trả lời…</p>}<div ref={bottom} />
+      </div>
+      <div className="border-t border-slate-200 p-4 space-y-3">
+        {error && <div role="alert" className="text-sm text-rose-700 bg-rose-50 rounded-lg p-3">{error}{active?.messages.at(-1)?.role === 'user' && <button disabled={busy} onClick={() => submit(active.messages.at(-1)!.text, true)} className="ml-3 underline">Thử lại</button>}</div>}
+        <div className="flex flex-wrap gap-2">{['Tổng hợp Standup hôm nay', 'Phân tích rủi ro và issue quá hạn', 'Đề xuất hành động tiếp theo cho PM'].map(text => <button key={text} disabled={busy || isDataLoading || !storageKey} onClick={() => submit(text)} className="text-xs border border-slate-200 rounded-full px-3 py-1.5 text-slate-600 disabled:opacity-40">{text}</button>)}</div>
+        <form onSubmit={e => { e.preventDefault(); void submit(draft); }} className="flex gap-2 items-end">
+          <textarea aria-label="Tin nhắn cho AI" value={draft} onChange={e => setDraft(e.target.value)} maxLength={4000} disabled={busy || !storageKey} rows={3} placeholder="Nhập câu hỏi hoặc yêu cầu báo cáo…" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void submit(draft); } }} className="flex-1 min-w-0 border border-slate-300 rounded-lg p-3 text-sm" />
+          <button type="submit" disabled={busy || isDataLoading || !storageKey || !draft.trim()} className="bg-indigo-600 text-white rounded-lg px-4 py-3 text-sm disabled:opacity-40"><Send className="w-4 h-4 inline mr-1" />Gửi</button>
+        </form>
+        <p className="text-xs text-slate-500">Phiên lưu trên trình duyệt, riêng theo dự án và kết nối Redmine. AI nhận tối đa 24 tin nhắn gần nhất cùng thống kê và dữ liệu issue mẫu; hỏi bằng mã issue để ưu tiên đúng công việc. Shift + Enter để xuống dòng.</p>
+      </div>
+    </div>
+  </div>;
+}

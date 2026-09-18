@@ -1,4 +1,36 @@
 import type { RedmineIssue } from '../types/redmine';
+import type { RedmineStatus } from '../types/redmine';
+import { calculatePMAnalytics, vietnamToday } from './pmAnalytics';
+
+export interface ChatMessage { role: 'user' | 'assistant'; text: string; model?: string }
+export interface ChatScope { loadedCount?: number; filters?: Record<string, string | number | boolean> }
+export function buildAIChatPayload(messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}) {
+  const latest = messages.at(-1)?.text.toLowerCase() ?? '';
+  const references = messages.slice(-8).map(m => m.text).join('\n');
+  const ids = new Set([...references.matchAll(/#?(\d{3,})/g)].map(m => Number(m[1])));
+  const stats = calculatePMAnalytics(issues, statuses);
+  const important = new Set([...stats.overdueIssues, ...stats.blockedIssues].map(i => i.id));
+  const normalize = (text: string) => text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+  const query = normalize(latest);
+  const memberMatch = (i: RedmineIssue) => !!i.assigned_to?.name && query.includes(normalize(i.assigned_to.name));
+  const sample = [...issues].sort((a, b) => Number(ids.has(b.id)) - Number(ids.has(a.id)) || Number(memberMatch(b)) - Number(memberMatch(a)) || Number(important.has(b.id)) - Number(important.has(a.id)));
+  const bounded = buildAIReportPayload('risk', projectName, sample, { totalIssues: stats.total, closedCount: stats.closed, inProgressCount: stats.inProgress, overdueCount: stats.overdueIssues.length, blockedCount: stats.blockedIssues.length }, model);
+  const history = messages.slice(-24).map(m => ({ role: m.role, text: m.text.slice(0, 8000) }));
+  while (history.at(0)?.role === 'assistant') history.shift();
+  const breakdown = (select: (issue: RedmineIssue) => { id: number; name: string }) => {
+    const rows = new Map<number, { id: number; name: string; count: number }>();
+    issues.forEach(i => { const v = select(i); const row = rows.get(v.id) ?? { id: v.id, name: v.name.slice(0, 80), count: 0 }; row.count++; rows.set(v.id, row); });
+    return [...rows.values()].slice(0, 100);
+  };
+  const loadedCount = scope.loadedCount ?? issues.length;
+  const filters = Object.fromEntries(Object.entries(scope.filters || {}).map(([k, v]) => [k, typeof v === 'string' ? v.slice(0, 200) : v]));
+  const payload = { ...bounded, mode: 'chat', messages: history, context: { today: vietnamToday(), loadedCount, displayedCount: issues.length, filters, totalAvailable, sampleCount: bounded.issues.length, isComplete: loadedCount === totalAvailable,
+    statuses: breakdown(i => i.status).map(row => ({ ...row, is_closed: statuses.find(s => s.id === row.id)?.is_closed })), trackers: breakdown(i => i.tracker), workload: stats.workloadAll.slice(0, 100).map(row => ({ ...row, name: row.name.slice(0, 80) })) } };
+  while (history.length > 1 && new TextEncoder().encode(JSON.stringify(payload)).byteLength > 200000) {
+    history.shift(); while (history.at(0)?.role === 'assistant') history.shift();
+  }
+  return payload;
+}
 
 // Keep the request small before it crosses Express / hosting body limits.
 // Overall counts still describe all loaded issues; only detail is sampled.

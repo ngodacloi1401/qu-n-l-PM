@@ -1,4 +1,5 @@
 import React from 'react';
+import { calculatePMAnalytics, isIssueClosed } from '../services/pmAnalytics';
 import {
   CheckCircle2,
   Clock,
@@ -34,6 +35,8 @@ interface DashboardAnalyticsProps {
   issues: RedmineIssue[];
   versions: RedmineVersion[];
   statuses: RedmineStatus[];
+  loadedCount: number;
+  totalAvailable: number;
   onSelectIssue: (issue: RedmineIssue) => void;
 }
 
@@ -51,27 +54,11 @@ const COLORS = [
 export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
   issues,
   versions,
+  statuses, loadedCount, totalAvailable,
   onSelectIssue,
 }) => {
-  const today = new Date().toISOString().split('T')[0];
-
-  const total = issues.length;
-  const closed = issues.filter((i) => i.status.name.toLowerCase().includes('close') || i.status.name.toLowerCase().includes('verified')).length;
-  const inProgress = issues.filter((i) => i.status.name.toLowerCase().includes('progress')).length;
-  const overdueIssues = issues.filter(
-    (i) =>
-      i.due_date &&
-      i.due_date < today &&
-      !i.status.name.toLowerCase().includes('close') &&
-      !i.status.name.toLowerCase().includes('verified')
-  );
-  const blockedIssues = issues.filter(
-    (i) =>
-      i.status.name.toLowerCase().includes('block') ||
-      i.status.name.toLowerCase().includes('fail')
-  );
-
-  const completionRate = total > 0 ? Math.round((closed / total) * 100) : 0;
+  const { total, closed, inProgress, overdueIssues, blockedIssues, completionRate, workload: workloadChartData } = calculatePMAnalytics(issues, statuses);
+  const reportVersions = [...new Map([...versions, ...issues.flatMap(i => i.fixed_version ? [i.fixed_version] : [])].map(v => [v.id, v])).values()];
 
   // Status breakdown data for Pie Chart
   const statusMap: Record<string, number> = {};
@@ -83,31 +70,6 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 
-  // Workload by assignee
-  const assigneeMap: Record<string, { total: number; completed: number; inProgress: number }> = {};
-  issues.forEach((i) => {
-    const name = i.assigned_to?.name || 'Chưa phân công';
-    if (!assigneeMap[name]) {
-      assigneeMap[name] = { total: 0, completed: 0, inProgress: 0 };
-    }
-    assigneeMap[name].total += 1;
-    if (i.status.name.toLowerCase().includes('close') || i.status.name.toLowerCase().includes('verified')) {
-      assigneeMap[name].completed += 1;
-    } else if (i.status.name.toLowerCase().includes('progress')) {
-      assigneeMap[name].inProgress += 1;
-    }
-  });
-
-  const workloadChartData = Object.entries(assigneeMap)
-    .map(([name, val]) => ({
-      name,
-      total: val.total,
-      completed: val.completed,
-      inProgress: val.inProgress,
-    }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 10); // top 10 members
-
   // Tracker breakdown
   const trackerMap: Record<string, number> = {};
   issues.forEach((i) => {
@@ -117,10 +79,11 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
   const trackerChartData = Object.entries(trackerMap)
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
-    .slice(0, 8);
+;
 
   return (
     <div className="space-y-6">
+      <p className="text-sm text-slate-600">Báo cáo theo dự án và bộ lọc đang chọn: {total} công việc hiển thị; đã tải {loadedCount}/{totalAvailable}. {loadedCount < totalAvailable ? "Chưa đủ dữ liệu để kết luận toàn bộ phạm vi. Bấm Tải hết ở bộ lọc phía trên." : "Đã tải đủ phạm vi truy vấn."}</p>
       {/* 5 PM High-Level KPI Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
         {/* Total */}
@@ -130,7 +93,7 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
             <Target className="w-4 h-4 text-indigo-500" />
           </div>
           <div className="text-2xl font-bold text-slate-900">{total}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Dữ liệu Redmine trực tiếp</div>
+          <div className="text-[11px] text-slate-500 mt-1">Công việc trong phạm vi đang xem</div>
         </div>
 
         {/* In Progress */}
@@ -146,11 +109,11 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
         {/* Completion Rate */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Tỉ lệ hoàn thành</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Tỷ lệ đã đóng</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           </div>
           <div className="text-2xl font-bold text-emerald-600">{completionRate}%</div>
-          <div className="text-[11px] text-slate-500 mt-1">{closed} việc đã đóng / verified</div>
+          <div className="text-[11px] text-slate-500 mt-1">{closed} việc có trạng thái đóng trên Redmine</div>
         </div>
 
         {/* Overdue */}
@@ -185,7 +148,7 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
                 Phân bổ tải công việc theo thành viên (Top 10)
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Giúp PM đánh giá tình trạng quá tải hoặc còn trống nguồn lực
+                Số issue được giao; chưa phản ánh số giờ hoặc độ phức tạp công việc
               </p>
             </div>
           </div>
@@ -296,21 +259,17 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
           <h3 className="font-bold text-sm text-slate-900 mb-3 flex items-center gap-2">
             <Target className="w-4 h-4 text-emerald-600" />
-            Tiến độ các Milestone / Sprints ({versions.length})
+            Tiến độ các Milestone / Sprints ({reportVersions.length})
           </h3>
           <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-            {versions.length === 0 ? (
+            {reportVersions.length === 0 ? (
               <div className="text-center py-8 text-xs text-slate-400">
                 Chưa có milestone nào trong dự án này
               </div>
             ) : (
-              versions.map((ver) => {
+              reportVersions.map((ver) => {
                 const verIssues = issues.filter((i) => i.fixed_version?.id === ver.id);
-                const verClosed = verIssues.filter(
-                  (i) =>
-                    i.status.name.toLowerCase().includes('close') ||
-                    i.status.name.toLowerCase().includes('verified')
-                ).length;
+                const verClosed = verIssues.filter(i => isIssueClosed(i, statuses)).length;
                 const pct = verIssues.length > 0 ? Math.round((verClosed / verIssues.length) * 100) : 0;
 
                 return (
@@ -318,7 +277,7 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
                     <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1.5">
                       <span>{ver.name}</span>
                       <span className="text-slate-500 font-medium">
-                        {verClosed} / {verIssues.length} ({pct}%)
+                        {verIssues.length ? `${verClosed} / ${verIssues.length} (${pct}%)` : "Chưa có công việc trong phạm vi đã tải"}
                       </span>
                     </div>
                     <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">

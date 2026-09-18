@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
 import { geminiErrorResponse } from '../lib/geminiErrors.js';
+import { createChatRequest } from '../lib/geminiChat.js';
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
@@ -277,6 +278,11 @@ app.post('/api/redmine/time_entries', async (req: Request, res: Response) => {
 app.post('/api/gemini/pm-insights', async (req: Request, res: Response) => {
   try {
     const { mode, projectName, issues, statistics, model } = req.body;
+    let chat: ReturnType<typeof createChatRequest> | undefined;
+    if (mode === 'chat') {
+      try { chat = createChatRequest(req.body); }
+      catch (error: any) { return res.status(400).json({ error: error.message }); }
+    }
     const clientKey = (req.headers['x-gemini-api-key'] as string | undefined)?.trim();
     const apiKey = clientKey || process.env.GEMINI_API_KEY;
 
@@ -330,7 +336,8 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
       try {
         const generatePromise = ai.models.generateContent({
           model: candidate,
-          contents: prompt,
+          contents: chat ? chat.contents : prompt,
+          config: chat ? { systemInstruction: chat.systemInstruction, maxOutputTokens: 4096 } : undefined,
         });
         const response: any = await generatePromise;
         if (response && response.text) {
