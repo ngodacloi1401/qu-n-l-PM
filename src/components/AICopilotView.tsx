@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Plus, Sparkles } from 'lucide-react';
+import { Send, Plus, Sparkles, RefreshCw } from 'lucide-react';
 import type { RedmineIssue, RedmineProject, RedmineStatus } from '../types/redmine';
-import { AVAILABLE_AI_MODELS, askGeminiChat, getStoredConfig } from '../services/redmineApi';
+import { AVAILABLE_AI_MODELS, askGeminiChat, getAvailableAIModels, getStoredConfig } from '../services/redmineApi';
 import type { ChatMessage, ChatScope } from '../services/aiPayload';
 import { cacheScope, readLocalCache, writeLocalCache } from '../services/localCache';
 
@@ -17,6 +17,9 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const [model, setModel] = useState(savedModel);
   const [custom, setCustom] = useState(() => AVAILABLE_AI_MODELS.some(m => m.id === savedModel()) ? '' : savedModel());
   const [customMode, setCustomMode] = useState(() => !AVAILABLE_AI_MODELS.some(m => m.id === savedModel()));
+  const [modelOptions, setModelOptions] = useState(AVAILABLE_AI_MODELS);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsSource, setModelsSource] = useState<'api' | 'fallback'>('fallback');
   const [store, setStore] = useState<SessionStore>({ sessions: [], activeId: '' });
   const [storageKey, setStorageKey] = useState('');
   const [draft, setDraft] = useState('');
@@ -27,6 +30,22 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const bottom = useRef<HTMLDivElement>(null);
   const active = store.sessions.find(s => s.id === store.activeId);
   const activeModel = customMode ? custom.trim() : model;
+
+  const loadModels = async () => {
+    setModelsLoading(true);
+    try {
+      const available = await getAvailableAIModels();
+      if (available.length) {
+        setModelOptions(available);
+        setModelsSource('api');
+        const current = customMode ? custom.trim() : model;
+        if (available.some(item => item.id === current)) { setModel(current); setCustomMode(false); }
+      }
+    } catch { setModelOptions(AVAILABLE_AI_MODELS); setModelsSource('fallback'); }
+    finally { setModelsLoading(false); }
+  };
+
+  useEffect(() => { void loadModels(); }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,11 +92,12 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     <div className="bg-slate-900 text-white rounded-xl p-5 flex flex-wrap items-end justify-between gap-4">
       <div><h2 className="font-bold flex items-center gap-2"><Sparkles className="w-5 h-5" />AI PM · Chat theo phiên</h2><p className="text-xs text-slate-300 mt-2">{selectedProject?.name || 'Tất cả dự án'} · AI sử dụng toàn bộ {issues.length}/{totalAvailable} công việc của dự án.{isDataLoading ? ' Đang đồng bộ dữ liệu…' : (scope.loadedCount ?? issues.length) < totalAvailable ? ' Hãy chờ tải đủ dữ liệu trước khi hỏi.' : ''}</p></div>
       <div className="space-y-2 w-full sm:w-64">
-        <label htmlFor="ai-model-select" className="text-xs">Model AI</label>
+        <div className="flex items-center justify-between"><label htmlFor="ai-model-select" className="text-xs">Model AI</label><button type="button" onClick={() => void loadModels()} disabled={busy || modelsLoading} className="text-[11px] text-slate-300 hover:text-white disabled:opacity-40"><RefreshCw className={`inline w-3 h-3 mr-1 ${modelsLoading ? 'animate-spin' : ''}`} />Cập nhật</button></div>
         <select id="ai-model-select" value={customMode ? 'custom' : model} disabled={busy} onChange={e => { setCustomMode(e.target.value === 'custom'); if (e.target.value !== 'custom') setModel(e.target.value); }} className="block w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm">
-          {AVAILABLE_AI_MODELS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}<option value="custom">Nhập mã Model khác</option>
+          {modelOptions.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}<option value="custom">Nhập mã Model khác</option>
         </select>
         {customMode && <input aria-label="Mã model AI tùy chỉnh" value={custom} onChange={e => setCustom(e.target.value)} disabled={busy} className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm" placeholder="vd: gemini-2.5-flash" />}
+        <p className="text-[11px] text-slate-400">{modelsSource === 'api' ? 'Danh sách theo quyền của Gemini API Key hiện tại.' : 'Đang dùng danh sách dự phòng; vẫn có thể nhập mã model khác.'}</p>
       </div>
     </div>
     <div className="flex flex-wrap gap-2 items-center">

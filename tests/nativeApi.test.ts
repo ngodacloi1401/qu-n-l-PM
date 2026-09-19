@@ -11,7 +11,7 @@ test('compiled serverless API starts in native Node ESM without the tsx resolver
   await mkdir(root, { recursive: true });
   const output = await mkdtemp(join(root, 'native-'));
   try {
-    await build({ entryPoints: ['api/index.ts', 'lib/geminiErrors.ts', 'lib/geminiChat.ts'], outbase: '.', outdir: output, platform: 'node', format: 'esm', bundle: false });
+    await build({ entryPoints: ['api/index.ts', 'lib/geminiErrors.ts', 'lib/geminiChat.ts', 'lib/geminiModels.ts'], outbase: '.', outdir: output, platform: 'node', format: 'esm', bundle: false });
     const url = pathToFileURL(join(output, 'api/index.js')).href;
     const result = spawnSync(process.execPath, ['--input-type=module', '-e', `const { default: app } = await import(${JSON.stringify(url)}); if (typeof app !== 'function') throw new Error('Missing Express handler'); console.log('API starts');`], { encoding: 'utf8', timeout: 10000 });
     assert.equal(result.status, 0, result.stderr);

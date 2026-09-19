@@ -677,6 +677,12 @@ export interface AIModelOption {
 }
 
 export const AVAILABLE_AI_MODELS: AIModelOption[] = [
+  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', description: 'Model Flash mới nhất cho phân tích phức tạp', badge: 'Mới nhất' },
+  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', description: 'Model Flash ổn định cho quy trình nhiều bước' },
+  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', description: 'Cân bằng tốc độ và khả năng phân tích' },
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', description: 'Model Flash ổn định cho công việc hằng ngày' },
+  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite', description: 'Nhanh và tiết kiệm cho dữ liệu lớn' },
+  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview', description: 'Phân tích chuyên sâu; model preview', badge: 'Chuyên sâu' },
   {
     id: 'gemini-2.5-flash',
     name: 'Gemini 2.5 Flash',
@@ -702,6 +708,15 @@ export const AVAILABLE_AI_MODELS: AIModelOption[] = [
     badge: 'Chuyên sâu',
   },
 ];
+
+export async function getAvailableAIModels(): Promise<AIModelOption[]> {
+  const res = await fetch('/api/gemini/models', { headers: getHeaders() });
+  if (!res.ok) throw new Error('Không thể tải danh sách model theo Gemini API Key');
+  const data = await res.json();
+  return (Array.isArray(data.models) ? data.models : []).map((item: any) => ({
+    id: String(item.id), name: String(item.name || item.id), description: String(item.description || ''),
+  })).filter((item: AIModelOption) => item.id);
+}
 
 export interface GeminiPMResponse {
   result: string;

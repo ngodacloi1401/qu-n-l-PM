@@ -5,6 +5,7 @@ import app from '../api/index';
 import { createChatRequest } from '../lib/geminiChat';
 import { buildAIChatPayload, type ChatMessage } from '../src/services/aiPayload';
 import type { RedmineIssue } from '../src/types/redmine';
+import { listGeminiTextModels } from '../lib/geminiModels';
 
 test('Gemini chat carries both turns to the SDK with current context and selected model', async () => {
   const originalFetch = globalThis.fetch;
@@ -73,4 +74,18 @@ test('a specifically requested issue outside the default sample is included', ()
   assert.equal(incomplete.context.isComplete, false);
   assert.equal(incomplete.context.allIssueCount, 10);
   assert.equal(incomplete.statistics.totalIssues, 10);
+});
+
+test('Gemini model discovery keeps text generateContent models and excludes media endpoints', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ models: [
+    { name: 'models/gemini-3.8-flash', baseModelId: 'gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-3.1-flash-image', baseModelId: 'gemini-3.1-flash-image', displayName: 'Image', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-embedding-001', baseModelId: 'gemini-embedding-001', displayName: 'Embedding', supportedGenerationMethods: ['embedContent'] },
+    { name: 'models/gemini-2.5-pro', baseModelId: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', supportedGenerationMethods: ['generateContent'] },
+  ] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  try {
+    const models = await listGeminiTextModels('test-key');
+    assert.deepEqual(models.map(model => model.id), ['gemini-3.8-flash', 'gemini-2.5-pro']);
+  } finally { globalThis.fetch = originalFetch; }
 });

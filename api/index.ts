@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
 import { geminiErrorResponse } from '../lib/geminiErrors.js';
 import { createChatRequest } from '../lib/geminiChat.js';
+import { listGeminiTextModels } from '../lib/geminiModels.js';
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
@@ -278,6 +279,13 @@ app.post('/api/redmine/time_entries', async (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'Failed to log time' });
   }
+});
+
+app.get('/api/gemini/models', async (req: Request, res: Response) => {
+  const apiKey = ((req.headers['x-gemini-api-key'] as string | undefined)?.trim() || process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) return res.status(400).json({ error: 'Chưa cấu hình Gemini API Key.' });
+  try { return res.json({ models: await listGeminiTextModels(apiKey) }); }
+  catch (error: any) { return res.status(Number(error?.status) || 502).json({ error: error?.message || 'Không thể tải danh sách model Gemini.' }); }
 });
 
 app.post('/api/gemini/pm-insights', async (req: Request, res: Response) => {
