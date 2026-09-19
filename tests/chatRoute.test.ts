@@ -6,6 +6,7 @@ import { createChatRequest } from '../lib/geminiChat';
 import { buildAIChatPayload, type ChatMessage } from '../src/services/aiPayload';
 import type { RedmineIssue } from '../src/types/redmine';
 import { listGeminiTextModels } from '../lib/geminiModels';
+import { listAnthropicModels, listOpenAIModels } from '../lib/aiProviders';
 
 test('Gemini chat carries both turns to the SDK with current context and selected model', async () => {
   const originalFetch = globalThis.fetch;
@@ -110,4 +111,51 @@ test('Gemini model discovery keeps text generateContent models and excludes medi
     const models = await listGeminiTextModels('test-key');
     assert.deepEqual(models.map(model => model.id), ['gemini-3.8-flash', 'gemini-2.5-pro']);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('OpenAI and Anthropic model discovery keeps chat models returned for the active key', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('openai.com')) return new Response(JSON.stringify({ data: [
+        { id: 'gpt-5.2' }, { id: 'gpt-image-1' }, { id: 'text-embedding-3-large' }, { id: 'o4-mini' },
+      ] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ data: [
+        { id: 'claude-sonnet-5', display_name: 'Claude Sonnet 5' }, { id: 'not-claude', display_name: 'Other' },
+      ] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+    assert.deepEqual((await listOpenAIModels('test-key')).map(item => item.id), ['o4-mini', 'gpt-5.2']);
+    assert.deepEqual((await listAnthropicModels('test-key')).map(item => item.id), ['claude-sonnet-5']);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('provider chat routes send the full PM prompt to OpenAI and Anthropic', async () => {
+  const originalFetch = globalThis.fetch;
+  const captured: Array<{ url: string; body: any; headers: Headers }> = [];
+  globalThis.fetch = async (url, init) => {
+    const target = String(url);
+    captured.push({ url: target, body: JSON.parse(String(init?.body)), headers: new Headers(init?.headers) });
+    if (target.includes('openai.com')) return new Response(JSON.stringify({ output_text: 'OpenAI đã phân tích dự án.' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (target.includes('anthropic.com')) return new Response(JSON.stringify({ content: [{ type: 'text', text: 'Claude đã phân tích dự án.' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    throw new Error(`Unexpected outbound request: ${target}`);
+  };
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const port = (server.address() as { port: number }).port;
+  try {
+    const base = buildAIChatPayload([{ role: 'user', text: 'Tổng hợp toàn bộ dự án' }], 'Test Project', [], [], 0, 'gpt-5.2', { loadedCount: 0 });
+    const openAI = await originalFetch(`http://127.0.0.1:${port}/api/ai/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-openai-api-key': 'openai-test' }, body: JSON.stringify({ ...base, provider: 'openai' }) });
+    assert.equal(openAI.status, 200, await openAI.clone().text());
+    assert.equal((await openAI.json()).result, 'OpenAI đã phân tích dự án.');
+
+    const anthropic = await originalFetch(`http://127.0.0.1:${port}/api/ai/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-anthropic-api-key': 'anthropic-test' }, body: JSON.stringify({ ...base, provider: 'anthropic', model: 'claude-sonnet-5' }) });
+    assert.equal(anthropic.status, 200, await anthropic.clone().text());
+    assert.equal((await anthropic.json()).result, 'Claude đã phân tích dự án.');
+
+    assert.equal(captured[0].body.model, 'gpt-5.2');
+    assert.match(captured[0].body.instructions, /Test Project/);
+    assert.equal(captured[0].body.store, false);
+    assert.equal(captured[1].body.model, 'claude-sonnet-5');
+    assert.match(captured[1].body.system, /allIssues/);
+    assert.equal(captured[1].headers.get('anthropic-version'), '2023-06-01');
+  } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
 });

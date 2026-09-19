@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import { geminiErrorResponse } from '../lib/geminiErrors.js';
 import { createChatRequest } from '../lib/geminiChat.js';
 import { listGeminiTextModels } from '../lib/geminiModels.js';
+import { registerProviderAIRoutes } from '../lib/aiRoutes.js';
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
@@ -385,5 +386,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
     return res.status(failure.status).json({ error: failure.error });
   }
 });
+
+registerProviderAIRoutes(app);
 
 export default app;

@@ -14,7 +14,7 @@ test('AI API accepts the report limit and returns JSON errors for oversized bodi
     const allowed = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'standup', padding: 'x'.repeat(125000) }) });
     assert.equal(allowed.status, 400);
     assert.match((await allowed.json()).error, /GEMINI_API_KEY/);
-    const tooLarge = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ padding: 'x'.repeat(300000) }) });
+    const tooLarge = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ padding: 'x'.repeat(4_200_000) }) });
     assert.equal(tooLarge.status, 413);
     assert.match(tooLarge.headers.get('content-type')!, /application\/json/);
     assert.match((await tooLarge.json()).error, /quá lớn/);

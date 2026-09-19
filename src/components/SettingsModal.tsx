@@ -16,6 +16,10 @@ import {
   saveStoredConfig,
   getStoredGeminiKey,
   saveStoredGeminiKey,
+  getStoredOpenAIKey,
+  saveStoredOpenAIKey,
+  getStoredAnthropicKey,
+  saveStoredAnthropicKey,
   DEFAULT_REDMINE_URL,
   DEFAULT_REDMINE_KEY,
 } from '../services/redmineApi';
@@ -30,6 +34,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
   const [baseUrl, setBaseUrl] = useState(currentConfig.baseUrl);
   const [apiKey, setApiKey] = useState(currentConfig.apiKey);
   const [geminiKey, setGeminiKey] = useState(getStoredGeminiKey());
+  const [openAIKey, setOpenAIKey] = useState(getStoredOpenAIKey());
+  const [anthropicKey, setAnthropicKey] = useState(getStoredAnthropicKey());
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -75,6 +81,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
       apiKey: apiKey.trim(),
     });
     saveStoredGeminiKey(geminiKey.trim());
+    saveStoredOpenAIKey(openAIKey.trim());
+    saveStoredAnthropicKey(anthropicKey.trim());
     onSaved();
     onClose();
   };
@@ -87,7 +95,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
 
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between pb-3 border-b border-slate-200 mb-4">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-bold">
@@ -95,7 +103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900">Cài đặt kết nối & AI Copilot</h3>
-              <p className="text-xs text-slate-500">Cấu hình Redmine API & Khóa Gemini AI</p>
+              <p className="text-xs text-slate-500">Cấu hình Redmine và API key của các nhà cung cấp AI</p>
             </div>
           </div>
 
@@ -191,8 +199,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500"
             />
             <p className="text-[11px] text-slate-400 mt-1">
-              Cần thiết để chạy các tính năng AI Copilot (Báo cáo Standup, Phân tích rủi ro PM).
+              Dùng khi chọn nhà cung cấp Gemini trong AI PM Copilot.
             </p>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                <span>OpenAI API Key (ChatGPT models)</span>
+              </label>
+              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-[11px] text-indigo-600 hover:underline flex items-center gap-0.5">
+                <span>Lấy API key</span><ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+            <input type="password" value={openAIKey} onChange={(e) => setOpenAIKey(e.target.value)} placeholder="sk-... (OpenAI API Key)" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500" />
+            <p className="text-[11px] text-slate-400 mt-1">Dùng API Platform của OpenAI; gói ChatGPT cá nhân không tự cung cấp API key.</p>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-orange-600" />
+                <span>Anthropic API Key (Claude)</span>
+              </label>
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" className="text-[11px] text-indigo-600 hover:underline flex items-center gap-0.5">
+                <span>Lấy API key</span><ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+            <input type="password" value={anthropicKey} onChange={(e) => setAnthropicKey(e.target.value)} placeholder="sk-ant-... (Anthropic API Key)" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500" />
           </div>
 
           {/* Test connection button */}

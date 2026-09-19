@@ -242,7 +242,7 @@ export const Header: React.FC<HeaderProps> = ({
               <Sparkles className="w-4 h-4 text-purple-600" />
               <span>AI PM Copilot</span>
               <span className="bg-purple-200 text-purple-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
-                Gemini
+                Gemini · Claude · GPT
               </span>
             </button>
           </nav>

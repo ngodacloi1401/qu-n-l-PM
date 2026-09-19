@@ -5,6 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 import { geminiErrorResponse } from './lib/geminiErrors.js';
 import { createChatRequest } from './lib/geminiChat.js';
 import { listGeminiTextModels } from './lib/geminiModels.js';
+import { registerProviderAIRoutes } from './lib/aiRoutes.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -444,6 +445,8 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
     return res.status(failure.status).json({ error: failure.error });
   }
 });
+
+registerProviderAIRoutes(app);
 
 // -------------------------------------------------------------
 // Vite Middleware / Static Serving

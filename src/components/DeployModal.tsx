@@ -152,6 +152,20 @@ git push -u origin main --force`;
                   <span className="text-slate-500">[Khóa API Gemini của bạn]</span>
                 </div>
               </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-indigo-600 font-bold">OPENAI_API_KEY</span>=
+                  <span className="text-slate-500">[Khóa API OpenAI của bạn]</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-indigo-600 font-bold">ANTHROPIC_API_KEY</span>=
+                  <span className="text-slate-500">[Khóa API Anthropic của bạn]</span>
+                </div>
+              </div>
             </div>
           </div>
 

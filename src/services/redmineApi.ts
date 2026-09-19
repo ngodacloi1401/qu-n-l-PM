@@ -28,6 +28,8 @@ export const DEFAULT_REDMINE_URL = 'https://redmine.anybim.vn';
 export const DEFAULT_REDMINE_KEY = '440da87a37415860ff240080d18ba34b21536eb8';
 
 const STORAGE_KEY_GEMINI_KEY = 'redmine_pm_gemini_api_key';
+const STORAGE_KEY_OPENAI_KEY = 'redmine_pm_openai_api_key';
+const STORAGE_KEY_ANTHROPIC_KEY = 'redmine_pm_anthropic_api_key';
 
 export const DEFAULT_REDMINE_STATUSES: RedmineStatus[] = [
   { id: 1, name: 'New', is_closed: false },
@@ -217,9 +219,27 @@ export function saveStoredGeminiKey(key: string): void {
   localStorage.setItem(STORAGE_KEY_GEMINI_KEY, key);
 }
 
+export function getStoredOpenAIKey(): string {
+  return localStorage.getItem(STORAGE_KEY_OPENAI_KEY) || '';
+}
+
+export function saveStoredOpenAIKey(key: string): void {
+  localStorage.setItem(STORAGE_KEY_OPENAI_KEY, key);
+}
+
+export function getStoredAnthropicKey(): string {
+  return localStorage.getItem(STORAGE_KEY_ANTHROPIC_KEY) || '';
+}
+
+export function saveStoredAnthropicKey(key: string): void {
+  localStorage.setItem(STORAGE_KEY_ANTHROPIC_KEY, key);
+}
+
 function getHeaders(): HeadersInit {
   const cfg = getStoredConfig();
   const geminiKey = getStoredGeminiKey();
+  const openAIKey = getStoredOpenAIKey();
+  const anthropicKey = getStoredAnthropicKey();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-redmine-url': cfg.baseUrl,
@@ -228,6 +248,8 @@ function getHeaders(): HeadersInit {
   if (geminiKey) {
     headers['x-gemini-api-key'] = geminiKey;
   }
+  if (openAIKey) headers['x-openai-api-key'] = openAIKey;
+  if (anthropicKey) headers['x-anthropic-api-key'] = anthropicKey;
   return headers;
 }
 
@@ -676,6 +698,8 @@ export interface AIModelOption {
   isDefault?: boolean;
 }
 
+export type AIProvider = 'gemini' | 'openai' | 'anthropic';
+
 export const AVAILABLE_AI_MODELS: AIModelOption[] = [
   { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', description: 'Model Flash mới nhất cho phân tích phức tạp', badge: 'Mới nhất' },
   { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', description: 'Model Flash ổn định cho quy trình nhiều bước' },
@@ -709,13 +733,38 @@ export const AVAILABLE_AI_MODELS: AIModelOption[] = [
   },
 ];
 
-export async function getAvailableAIModels(): Promise<AIModelOption[]> {
-  const res = await fetch('/api/gemini/models', { headers: getHeaders() });
-  if (!res.ok) throw new Error('Không thể tải danh sách model theo Gemini API Key');
-  const data = await res.json();
-  return (Array.isArray(data.models) ? data.models : []).map((item: any) => ({
+export const FALLBACK_AI_MODELS: Record<AIProvider, AIModelOption[]> = {
+  gemini: AVAILABLE_AI_MODELS,
+  openai: [
+    { id: 'gpt-5.2', name: 'GPT-5.2', description: 'Model OpenAI đa dụng', isDefault: true },
+    { id: 'gpt-5', name: 'GPT-5', description: 'Model OpenAI cho suy luận và phân tích' },
+    { id: 'gpt-4.1', name: 'GPT-4.1', description: 'Model ổn định với ngữ cảnh dài' },
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'Model đa dụng tốc độ cao' },
+  ],
+  anthropic: [
+    { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', description: 'Model Claude cân bằng', isDefault: true },
+    { id: 'claude-opus-5', name: 'Claude Opus 5', description: 'Model Claude chuyên sâu' },
+    { id: 'claude-fable-5', name: 'Claude Fable 5', description: 'Model Claude thế hệ mới' },
+    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', description: 'Model Claude ổn định' },
+    { id: 'claude-opus-4-8', name: 'Claude Opus 4.8', description: 'Model Claude chuyên sâu' },
+    { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', description: 'Model Claude nhanh và tiết kiệm' },
+  ],
+};
+
+export async function getAvailableAIModels(provider: AIProvider = 'gemini'): Promise<AIModelOption[]> {
+  const url = provider === 'gemini' ? '/api/gemini/models' : `/api/ai/models?provider=${provider}`;
+  const res = await fetch(url, { headers: getHeaders() });
+  const text = await res.text();
+  let data: any;
+  try { data = JSON.parse(text); } catch { /* A stale deployment can return the SPA HTML shell. */ }
+  if (!res.ok) {
+    throw new Error(data?.error || 'Không thể tải danh sách model theo API Key');
+  }
+  const models = (Array.isArray(data?.models) ? data.models : []).map((item: any) => ({
     id: String(item.id), name: String(item.name || item.id), description: String(item.description || ''),
   })).filter((item: AIModelOption) => item.id);
+  if (!models.length) throw new Error('Máy chủ chưa trả về danh sách model AI. Hãy thử lại sau khi bản mới được triển khai.');
+  return models;
 }
 
 export interface GeminiPMResponse {
@@ -725,9 +774,17 @@ export interface GeminiPMResponse {
   fallbackOccurred?: boolean;
 }
 
-export async function askGeminiChat(messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}): Promise<GeminiPMResponse> {
-  const res = await fetch('/api/gemini/pm-insights', { method: 'POST', headers: getHeaders(), body: JSON.stringify(buildAIChatPayload(messages, projectName, issues, statuses, totalAvailable, model, scope)) });
+export type AIPMResponse = GeminiPMResponse;
+
+export async function askAIChat(provider: AIProvider, messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}): Promise<AIPMResponse> {
+  const payload = { ...buildAIChatPayload(messages, projectName, issues, statuses, totalAvailable, model, scope), provider };
+  const url = provider === 'gemini' ? '/api/gemini/pm-insights' : '/api/ai/chat';
+  const res = await fetch(url, { method: 'POST', headers: getHeaders(), body: JSON.stringify(payload) });
   return readAIReportResponse(res);
+}
+
+export async function askGeminiChat(messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}): Promise<GeminiPMResponse> {
+  return askAIChat('gemini', messages, projectName, issues, statuses, totalAvailable, model, scope);
 }
 
 export async function askGeminiPM(

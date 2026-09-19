@@ -1,23 +1,37 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Send, Plus, Sparkles, RefreshCw } from 'lucide-react';
 import type { RedmineIssue, RedmineProject, RedmineStatus } from '../types/redmine';
-import { AVAILABLE_AI_MODELS, askGeminiChat, getAvailableAIModels, getStoredConfig } from '../services/redmineApi';
+import { FALLBACK_AI_MODELS, askAIChat, getAvailableAIModels, getStoredConfig, type AIProvider } from '../services/redmineApi';
 import type { ChatMessage, ChatScope } from '../services/aiPayload';
 import { cacheScope, readLocalCache, writeLocalCache } from '../services/localCache';
 
 interface Session { id: string; title: string; messages: ChatMessage[] }
 interface SessionStore { sessions: Session[]; activeId: string }
 const newSession = (): Session => ({ id: crypto.randomUUID(), title: 'Phiên mới', messages: [] });
-const MODEL_KEY = 'redmine_ai_model';
-const savedModel = () => localStorage.getItem(MODEL_KEY) || 'gemini-2.5-flash';
+const PROVIDER_KEY = 'redmine_ai_provider';
+const PROVIDERS: Array<{ id: AIProvider; name: string }> = [
+  { id: 'gemini', name: 'Google Gemini' },
+  { id: 'openai', name: 'OpenAI / ChatGPT' },
+  { id: 'anthropic', name: 'Anthropic / Claude' },
+];
+const savedProvider = (): AIProvider => {
+  const value = localStorage.getItem(PROVIDER_KEY);
+  return value === 'openai' || value === 'anthropic' ? value : 'gemini';
+};
+const savedModel = (provider: AIProvider) => localStorage.getItem(`redmine_ai_model_${provider}`)
+  || (provider === 'gemini' ? localStorage.getItem('redmine_ai_model') : '')
+  || FALLBACK_AI_MODELS[provider].find(item => item.isDefault)?.id
+  || FALLBACK_AI_MODELS[provider][0].id;
 
 export function AICopilotView({ issues, statuses, selectedProject, projectId, totalAvailable, isDataLoading, scope }: {
   issues: RedmineIssue[]; statuses: RedmineStatus[]; selectedProject: RedmineProject | undefined; projectId: string; totalAvailable: number; isDataLoading: boolean; scope: ChatScope;
 }) {
-  const [model, setModel] = useState(savedModel);
-  const [custom, setCustom] = useState(() => AVAILABLE_AI_MODELS.some(m => m.id === savedModel()) ? '' : savedModel());
-  const [customMode, setCustomMode] = useState(() => !AVAILABLE_AI_MODELS.some(m => m.id === savedModel()));
-  const [modelOptions, setModelOptions] = useState(AVAILABLE_AI_MODELS);
+  const [provider, setProvider] = useState<AIProvider>(savedProvider);
+  const initialModel = savedModel(savedProvider());
+  const [model, setModel] = useState(initialModel);
+  const [custom, setCustom] = useState(() => FALLBACK_AI_MODELS[savedProvider()].some(m => m.id === initialModel) ? '' : initialModel);
+  const [customMode, setCustomMode] = useState(() => !FALLBACK_AI_MODELS[savedProvider()].some(m => m.id === initialModel));
+  const [modelOptions, setModelOptions] = useState(FALLBACK_AI_MODELS[savedProvider()]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsSource, setModelsSource] = useState<'api' | 'fallback'>('fallback');
   const [modelNotice, setModelNotice] = useState('');
@@ -32,25 +46,40 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const active = store.sessions.find(s => s.id === store.activeId);
   const activeModel = customMode ? custom.trim() : model;
 
-  const loadModels = async () => {
+  const loadModels = async (targetProvider: AIProvider = provider, targetModel = activeModel, targetCustomMode = customMode) => {
     setModelsLoading(true);
+    setModelNotice('');
     try {
-      const available = await getAvailableAIModels();
+      const available = await getAvailableAIModels(targetProvider);
       if (available.length) {
         setModelOptions(available);
         setModelsSource('api');
-        const current = customMode ? custom.trim() : model;
+        const current = targetModel;
         if (available.some(item => item.id === current)) { setModel(current); setCustomMode(false); }
-        else if (!customMode) {
-          const next = available.find(item => item.id === 'gemini-2.5-flash') || available[0];
+        else if (!targetCustomMode) {
+          const saved = savedModel(targetProvider);
+          const next = available.find(item => item.id === saved) || available[0];
           setModel(next.id); setModelNotice(`Model cũ không khả dụng với API key. Đã chuyển sang ${next.name}.`);
         }
       }
-    } catch { setModelOptions(AVAILABLE_AI_MODELS); setModelsSource('fallback'); }
+    } catch (error: any) {
+      setModelOptions(FALLBACK_AI_MODELS[targetProvider]); setModelsSource('fallback');
+      setModelNotice(error?.message || 'Không thể tải danh sách model. Kiểm tra API key trong Cài đặt.');
+    }
     finally { setModelsLoading(false); }
   };
 
-  useEffect(() => { void loadModels(); }, []);
+  useEffect(() => {
+    const nextModel = savedModel(provider);
+    const fallback = FALLBACK_AI_MODELS[provider];
+    setModel(nextModel);
+    setCustom(fallback.some(item => item.id === nextModel) ? '' : nextModel);
+    setCustomMode(!fallback.some(item => item.id === nextModel));
+    setModelOptions(fallback);
+    setModelsSource('fallback');
+    localStorage.setItem(PROVIDER_KEY, provider);
+    void loadModels(provider, nextModel, !fallback.some(item => item.id === nextModel));
+  }, [provider]);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +96,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     return () => { cancelled = true; alive.current = false; };
   }, [projectId]);
   useEffect(() => { if (storageKey && store.sessions.length) void writeLocalCache(storageKey, store); }, [storageKey, store]);
-  useEffect(() => { if (activeModel) localStorage.setItem(MODEL_KEY, activeModel); }, [activeModel]);
+  useEffect(() => { if (activeModel) localStorage.setItem(`redmine_ai_model_${provider}`, activeModel); }, [activeModel, provider]);
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }); }, [active?.messages.length, busy]);
 
   const submit = async (text: string, retry = false) => {
@@ -80,7 +109,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     setStore(pending); if (!retry) setDraft('');
     await writeLocalCache(storageKey, pending);
     try {
-      const response = await askGeminiChat(messages, selectedProject?.name || 'Tất cả dự án', issues, statuses, totalAvailable, activeModel, { ...scope, availableModels: modelsSource === 'api' ? modelOptions.map(item => item.id) : [] });
+      const response = await askAIChat(provider, messages, selectedProject?.name || 'Tất cả dự án', issues, statuses, totalAvailable, activeModel, { ...scope, availableModels: modelsSource === 'api' ? modelOptions.map(item => item.id) : [] });
       if (response.fallbackOccurred && response.usedModel) {
         const option = modelOptions.find(item => item.id === response.usedModel);
         setModel(response.usedModel); setCustomMode(!option); if (!option) setCustom(response.usedModel);
@@ -101,13 +130,17 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   return <div className="space-y-4">
     <div className="bg-slate-900 text-white rounded-xl p-5 flex flex-wrap items-end justify-between gap-4">
       <div><h2 className="font-bold flex items-center gap-2"><Sparkles className="w-5 h-5" />AI PM · Chat theo phiên</h2><p className="text-xs text-slate-300 mt-2">{selectedProject?.name || 'Tất cả dự án'} · AI sử dụng toàn bộ {issues.length}/{totalAvailable} công việc của dự án.{isDataLoading ? ' Đang đồng bộ dữ liệu…' : (scope.loadedCount ?? issues.length) < totalAvailable ? ' Hãy chờ tải đủ dữ liệu trước khi hỏi.' : ''}</p></div>
-      <div className="space-y-2 w-full sm:w-64">
+      <div className="space-y-2 w-full sm:w-72">
+        <label htmlFor="ai-provider-select" className="text-xs">Nhà cung cấp AI</label>
+        <select id="ai-provider-select" value={provider} disabled={busy} onChange={e => setProvider(e.target.value as AIProvider)} className="block w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm">
+          {PROVIDERS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
         <div className="flex items-center justify-between"><label htmlFor="ai-model-select" className="text-xs">Model AI</label><button type="button" onClick={() => void loadModels()} disabled={busy || modelsLoading} className="text-[11px] text-slate-300 hover:text-white disabled:opacity-40"><RefreshCw className={`inline w-3 h-3 mr-1 ${modelsLoading ? 'animate-spin' : ''}`} />Cập nhật</button></div>
         <select id="ai-model-select" value={customMode ? 'custom' : model} disabled={busy} onChange={e => { setCustomMode(e.target.value === 'custom'); if (e.target.value !== 'custom') setModel(e.target.value); }} className="block w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm">
           {modelOptions.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}<option value="custom">Nhập mã Model khác</option>
         </select>
-        {customMode && <input aria-label="Mã model AI tùy chỉnh" value={custom} onChange={e => setCustom(e.target.value)} disabled={busy} className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm" placeholder="vd: gemini-2.5-flash" />}
-        <p className="text-[11px] text-slate-400">{modelsSource === 'api' ? 'Danh sách theo quyền của Gemini API Key hiện tại.' : 'Đang dùng danh sách dự phòng; vẫn có thể nhập mã model khác.'}</p>
+        {customMode && <input aria-label="Mã model AI tùy chỉnh" value={custom} onChange={e => setCustom(e.target.value)} disabled={busy} className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm" placeholder={provider === 'gemini' ? 'vd: gemini-2.5-flash' : provider === 'openai' ? 'vd: gpt-5.2' : 'vd: claude-sonnet-5'} />}
+        <p className="text-[11px] text-slate-400">{modelsSource === 'api' ? `Danh sách theo quyền của ${PROVIDERS.find(item => item.id === provider)?.name} API Key.` : 'Đang dùng danh sách dự phòng; nhập API key trong Cài đặt để tải đúng model được cấp quyền.'}</p>
         {modelNotice && <p role="status" className="text-[11px] text-amber-300">{modelNotice}</p>}
       </div>
     </div>
