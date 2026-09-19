@@ -18,3 +18,21 @@ test('Vietnam calendar date handles UTC midnight boundary and due today is not o
   const issue = { id: 1, status: { id: 1, name: 'New' }, due_date: '2026-09-18' } as RedmineIssue;
   assert.equal(calculatePMAnalytics([issue], [], '2026-09-18').overdueIssues.length, 0);
 });
+
+test('analytics processes ten thousand issues with Redmine status semantics', () => {
+  const rows = Array.from({ length: 10_000 }, (_, index) => ({
+    id: index + 1,
+    status: index % 2 ? { id: 5, name: 'Closed' } : { id: 2, name: 'In Progress' },
+    due_date: '2026-09-17',
+    assigned_to: { id: index % 100, name: `User ${index % 100}` },
+  } as RedmineIssue));
+  const stats = calculatePMAnalytics(rows, [
+    { id: 2, name: 'In Progress', is_closed: false },
+    { id: 5, name: 'Closed', is_closed: true },
+  ], '2026-09-18');
+  assert.equal(stats.total, 10_000);
+  assert.equal(stats.closed, 5_000);
+  assert.equal(stats.inProgress, 5_000);
+  assert.equal(stats.overdueIssues.length, 5_000);
+  assert.equal(stats.workloadAll.length, 100);
+});

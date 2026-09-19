@@ -19,6 +19,7 @@ import {
   RedmineStatus,
   RedminePriority,
 } from '../types/redmine';
+import { isIssueClosed, vietnamToday } from '../services/pmAnalytics';
 
 interface TableViewProps {
   issues: RedmineIssue[];
@@ -193,14 +194,8 @@ export const TableView: React.FC<TableViewProps> = ({
   const startIndex = (currentPage - 1) * pageSize;
   const visibleIssues = sortedIssues.slice(startIndex, startIndex + pageSize);
 
-  const isOverdue = (dateStr?: string, statusName?: string) => {
-    if (!dateStr) return false;
-    if (statusName?.toLowerCase().includes('close') || statusName?.toLowerCase().includes('verified')) {
-      return false;
-    }
-    const today = new Date().toISOString().split('T')[0];
-    return dateStr < today;
-  };
+  const isOverdue = (issue: RedmineIssue) =>
+    Boolean(issue.due_date && issue.due_date < vietnamToday() && !isIssueClosed(issue, statuses));
 
   const getTrackerStyle = (trackerName: string = '') => {
     const t = trackerName.toLowerCase();
@@ -579,7 +574,7 @@ export const TableView: React.FC<TableViewProps> = ({
               </tr>
             ) : (
               visibleIssues.map((issue) => {
-                const overdue = isOverdue(issue.due_date, issue.status.name);
+                const overdue = isOverdue(issue);
 
                 return (
                   <tr

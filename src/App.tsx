@@ -10,7 +10,6 @@ import {
   getIssueCategories,
   getMemberships,
   getVersions,
-  getTimeEntries,
   updateIssue,
   getStoredConfig,
   getDateFilterQuery,
@@ -27,7 +26,6 @@ import {
   RedmineIssueCategory,
   RedmineMembership,
   RedmineVersion,
-  RedmineTimeEntry,
   ViewMode,
 } from './types/redmine';
 import { Header } from './components/Header';
@@ -59,7 +57,6 @@ export default function App() {
   const [categories, setCategories] = useState<RedmineIssueCategory[]>([]);
   const [memberships, setMemberships] = useState<RedmineMembership[]>([]);
   const [versions, setVersions] = useState<RedmineVersion[]>([]);
-  const [timeEntries, setTimeEntries] = useState<RedmineTimeEntry[]>([]);
 
   const [activeView, setActiveView] = useState<ViewMode>('kanban');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -88,7 +85,7 @@ export default function App() {
     specificMonth: defaultMonth,
     customStart: '',
     customEnd: '',
-    fetchLimit: 100,
+    fetchLimit: 'all',
   });
 
   const config = getStoredConfig();
@@ -149,24 +146,13 @@ export default function App() {
       setTotalAvailableCount(0);
 
       try {
-        const dateQuery = getDateFilterQuery(
-          currentFilters.timePeriod,
-          currentFilters.dateField,
-          {
-            specificMonth: currentFilters.specificMonth,
-            customStart: currentFilters.customStart,
-            customEnd: currentFilters.customEnd,
-          }
-        );
+        const maxTotalNum = Number.MAX_SAFE_INTEGER;
 
-        const maxTotalNum = currentFilters.fetchLimit === 'all' ? Number.MAX_SAFE_INTEGER : currentFilters.fetchLimit;
-
-        const [issuesRes, mems, vers, cats, times] = await Promise.all([
+        const [issuesRes, mems, vers, cats] = await Promise.all([
           fetchAllIssues(
             {
               project_id: projId === 'all' ? undefined : projId,
               status_id: '*',
-              ...dateQuery,
             },
             (prog: FetchProgress) => {
               if (fetchRequestIdRef.current === currentRequestId) {
@@ -185,7 +171,6 @@ export default function App() {
           getMemberships(projId).catch(() => []),
           getVersions(projId).catch(() => []),
           getIssueCategories(projId).catch(() => []),
-          getTimeEntries(projId).catch(() => []),
         ]);
 
         if (fetchRequestIdRef.current === currentRequestId) {
@@ -195,7 +180,6 @@ export default function App() {
           setMemberships(mems);
           setVersions(vers);
           setCategories(cats);
-          setTimeEntries(times);
         }
       } catch (err: any) {
         if (fetchRequestIdRef.current === currentRequestId) {
@@ -219,12 +203,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedProjectId,
-    filters.timePeriod,
-    filters.dateField,
-    filters.specificMonth,
-    filters.customStart,
-    filters.customEnd,
-    filters.fetchLimit,
   ]);
 
   // Handle quick status change on Kanban or Table
@@ -257,8 +235,17 @@ export default function App() {
   // Filter issues client-side for ultra-fast, smooth, zero-reload response
   const filteredIssues = useMemo(() => {
     const today = vietnamToday();
+    const dateQuery = getDateFilterQuery(filters.timePeriod, filters.dateField, { specificMonth: filters.specificMonth, customStart: filters.customStart, customEnd: filters.customEnd });
+    const expression = dateQuery[filters.dateField];
 
     return issues.filter((iss) => {
+      if (expression) {
+        const value = String(iss[filters.dateField] || '').slice(0, 10);
+        if (!value) return false;
+        if (expression.startsWith('><')) { const [from, to] = expression.slice(2).split('|'); if (value < from || value > to) return false; }
+        else if (expression.startsWith('>=') && value < expression.slice(2)) return false;
+        else if (expression.startsWith('<=') && value > expression.slice(2)) return false;
+      }
       // Search
       if (filters.search.trim()) {
         const query = filters.search.toLowerCase().trim();
@@ -337,6 +324,7 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
+        {isLoading && <div role="status" className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-sm text-indigo-800"><RefreshCw className="inline w-4 h-4 mr-2 animate-spin" />{fetchProgress ? `Đang tải dữ liệu Redmine: ${fetchProgress.loaded}/${fetchProgress.total} công việc (${Math.round(fetchProgress.loaded / Math.max(fetchProgress.total, 1) * 100)}%)` : 'Đang chuẩn bị và kiểm tra dữ liệu Redmine…'}</div>}
         {/* Error notification */}
         {error && (
           <div className="mb-5 p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center justify-between">
@@ -422,8 +410,6 @@ export default function App() {
 
         {activeView === 'time' && (
           <TimeTrackingView
-            timeEntries={timeEntries}
-            issues={issues}
             selectedProject={selectedProject}
             onRefresh={() => loadProjectData(selectedProjectId, filters)}
           />

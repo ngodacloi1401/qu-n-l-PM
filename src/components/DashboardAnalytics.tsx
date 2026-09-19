@@ -61,13 +61,13 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
   const reportVersions = [...new Map([...versions, ...issues.flatMap(i => i.fixed_version ? [i.fixed_version] : [])].map(v => [v.id, v])).values()];
 
   // Status breakdown data for Pie Chart
-  const statusMap: Record<string, number> = {};
+  const statusMap = new Map<number, { id: number; name: string; value: number }>();
   issues.forEach((i) => {
-    const s = i.status.name || 'Unknown';
-    statusMap[s] = (statusMap[s] || 0) + 1;
+    const row = statusMap.get(i.status.id) || { id: i.status.id, name: i.status.name || 'Unknown', value: 0 };
+    row.value++;
+    statusMap.set(i.status.id, row);
   });
-  const statusChartData = Object.entries(statusMap)
-    .map(([name, value]) => ({ name, value }))
+  const statusChartData = [...statusMap.values()]
     .sort((a, b) => b.value - a.value);
 
   // Tracker breakdown
@@ -83,7 +83,7 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-slate-600">Báo cáo theo dự án và bộ lọc đang chọn: {total} công việc hiển thị; đã tải {loadedCount}/{totalAvailable}. {loadedCount < totalAvailable ? "Chưa đủ dữ liệu để kết luận toàn bộ phạm vi. Bấm Tải hết ở bộ lọc phía trên." : "Đã tải đủ phạm vi truy vấn."}</p>
+      <p className="text-sm text-slate-600">Báo cáo dùng trạng thái thực từ Redmine cho dự án và bộ lọc đang chọn: {total} công việc hiển thị; đã tải {loadedCount}/{totalAvailable}. {loadedCount < totalAvailable ? "Dữ liệu vẫn đang được tải nên số liệu có thể tiếp tục thay đổi." : "Đã tải đủ dữ liệu của dự án."}</p>
       {/* 5 PM High-Level KPI Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
         {/* Total */}
@@ -99,11 +99,11 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
         {/* In Progress */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider">Đang thực hiện</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Đang làm</span>
             <Clock className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-2xl font-bold text-amber-600">{inProgress}</div>
-          <div className="text-[11px] text-slate-500 mt-1">Đang được triển khai</div>
+          <div className="text-[11px] text-slate-500 mt-1">Status Redmine = In Progress và chưa đóng</div>
         </div>
 
         {/* Completion Rate */}
@@ -113,7 +113,7 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           </div>
           <div className="text-2xl font-bold text-emerald-600">{completionRate}%</div>
-          <div className="text-[11px] text-slate-500 mt-1">{closed} việc có trạng thái đóng trên Redmine</div>
+          <div className="text-[11px] text-slate-500 mt-1">{closed} việc có status được Redmine đánh dấu Đã đóng</div>
         </div>
 
         {/* Overdue */}
@@ -123,7 +123,7 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
             <AlertTriangle className="w-4 h-4 text-rose-500" />
           </div>
           <div className="text-2xl font-bold text-rose-600">{overdueIssues.length}</div>
-          <div className="text-[11px] text-rose-700/80 mt-1">Cần PM can thiệp ngay</div>
+          <div className="text-[11px] text-rose-700/80 mt-1">Có hạn chót trước hôm nay và status Redmine chưa đóng</div>
         </div>
 
         {/* Blocked / Failed */}
@@ -135,6 +135,12 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
           <div className="text-2xl font-bold text-orange-600">{blockedIssues.length}</div>
           <div className="text-[11px] text-slate-500 mt-1">Blocked hoặc Failed test</div>
         </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <h3 className="font-bold text-sm mb-2">Đối chiếu trạng thái Redmine</h3>
+        <p className="text-xs text-slate-600 mb-3">“Đã xong” chỉ dựa trên cờ Đã đóng của Redmine. QA Verified vẫn được tính là đang mở nếu Redmine chưa đánh dấu đóng. “Đang làm” chỉ gồm In Progress; các trạng thái New, Resolved, QA testing… vẫn được trình bày riêng bên dưới.</p>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">{statusChartData.map(row => { const configured = statuses.find(s => s.id === row.id); return <div key={row.id} className="border border-slate-200 rounded-lg p-3 text-xs"><div className="font-semibold">{row.name}</div><div className="mt-1">{row.value} việc · {configured?.is_closed ? 'Đã đóng' : 'Đang mở'}</div></div>; })}</div>
       </div>
 
       {/* Main Charts Row */}

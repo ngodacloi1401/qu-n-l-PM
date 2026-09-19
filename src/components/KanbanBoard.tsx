@@ -19,6 +19,7 @@ import {
   RedmineTracker,
   RedminePriority,
 } from '../types/redmine';
+import { isIssueClosed, vietnamToday } from '../services/pmAnalytics';
 
 interface KanbanColumnConfig {
   id: string;
@@ -149,14 +150,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
     return count > 0;
   });
 
-  const isOverdue = (dateStr?: string, statusName?: string) => {
-    if (!dateStr) return false;
-    if (statusName?.toLowerCase().includes('close') || statusName?.toLowerCase().includes('verified')) {
-      return false;
-    }
-    const today = new Date().toISOString().split('T')[0];
-    return dateStr < today;
-  };
+  const isOverdue = (issue: RedmineIssue) =>
+    Boolean(issue.due_date && issue.due_date < vietnamToday() && !isIssueClosed(issue, statuses));
 
   const getTrackerStyle = (trackerName: string = '') => {
     const t = trackerName.toLowerCase();
@@ -195,6 +190,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   return (
     <div className="space-y-3">
+      {issues.length > 1000 && <p className="text-xs text-slate-600 bg-amber-50 border border-amber-200 rounded-lg p-3">Đã tải {issues.length} công việc. Để Kanban cuộn mượt, mỗi cột chỉ render 100 thẻ đầu; số đếm trên cột vẫn là toàn bộ. Dùng bộ lọc hoặc Danh sách việc để tìm các thẻ còn lại.</p>}
       {/* Kanban Mode Controls */}
       <div className="bg-white p-2.5 px-4 rounded-xl border border-slate-200 flex items-center justify-between gap-3 flex-wrap shadow-2xs">
         <div className="flex items-center gap-2">
@@ -243,6 +239,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
         <div className="flex gap-4 min-w-max items-start">
           {activeColumns.map((col) => {
             const colIssues = issues.filter((iss) => col.statusIds.includes(iss.status.id));
+            const renderedIssues = colIssues.slice(0, 100);
 
             return (
               <div
@@ -270,8 +267,8 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
                       Không có công việc nào
                     </div>
                   ) : (
-                    colIssues.map((issue) => {
-                      const overdue = isOverdue(issue.due_date, issue.status.name);
+                    renderedIssues.map((issue) => {
+                      const overdue = isOverdue(issue);
 
                       return (
                         <div

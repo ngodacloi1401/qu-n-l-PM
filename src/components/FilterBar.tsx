@@ -165,6 +165,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
           <button
             id="filter-overdue-btn"
+            title="Quá hạn = hạn hoàn thành trước hôm nay và trạng thái chưa được Redmine đánh dấu Đã đóng"
             onClick={() => updateField('onlyOverdue', !filters.onlyOverdue)}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
               filters.onlyOverdue
