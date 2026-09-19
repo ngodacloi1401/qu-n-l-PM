@@ -8,15 +8,11 @@ import {
   Users,
   Target,
   BarChart2,
-  PieChart as PieIcon,
   ShieldAlert,
   ArrowRight,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
   Tooltip,
   BarChart,
   Bar,
@@ -82,10 +78,13 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
 ;
 
   return (
-    <div className="space-y-6">
-      <p className="text-sm text-slate-600">Báo cáo dùng trạng thái thực từ Redmine cho dự án và bộ lọc đang chọn: {total} công việc hiển thị; đã tải {loadedCount}/{totalAvailable}. {loadedCount < totalAvailable ? "Dữ liệu vẫn đang được tải nên số liệu có thể tiếp tục thay đổi." : "Đã tải đủ dữ liệu của dự án."}</p>
+    <div className="space-y-5">
+      <section className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div><h2 className="text-lg font-bold text-slate-900">Tổng quan dự án</h2><p className="text-sm text-slate-500 mt-1">Số liệu dùng trạng thái thật từ Redmine và bộ lọc đang chọn.</p></div>
+        <div className={`rounded-lg px-3 py-2 text-xs font-semibold ${loadedCount < totalAvailable ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>{loadedCount < totalAvailable ? `Đang tải ${loadedCount}/${totalAvailable} công việc` : `Đã tải đủ ${loadedCount} công việc`}</div>
+      </section>
       {/* 5 PM High-Level KPI Metric Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3.5">
         {/* Total */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
@@ -138,9 +137,8 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <h3 className="font-bold text-sm mb-2">Đối chiếu trạng thái Redmine</h3>
-        <p className="text-xs text-slate-600 mb-3">“Đã xong” chỉ dựa trên cờ Đã đóng của Redmine. QA Verified vẫn được tính là đang mở nếu Redmine chưa đánh dấu đóng. “Đang làm” chỉ gồm In Progress; các trạng thái New, Resolved, QA testing… vẫn được trình bày riêng bên dưới.</p>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">{statusChartData.map(row => { const configured = statuses.find(s => s.id === row.id); return <div key={row.id} className="border border-slate-200 rounded-lg p-3 text-xs"><div className="font-semibold">{row.name}</div><div className="mt-1">{row.value} việc · {configured?.is_closed ? 'Đã đóng' : 'Đang mở'}</div></div>; })}</div>
+        <div className="mb-4"><h3 className="font-bold text-sm text-slate-900">Trạng thái Redmine</h3><p className="text-xs text-slate-500 mt-1">Đã đóng dùng cờ <code>is_closed</code> của Redmine. Đang làm chỉ gồm <strong>In Progress</strong>. QA Verified, Resolved và các trạng thái khác vẫn mở nếu Redmine chưa đánh dấu đóng.</p></div>
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-2">{statusChartData.map(row => { const configured = statuses.find(s => s.id === row.id); const isClosed = Boolean(configured?.is_closed); return <div key={row.id} className="border border-slate-200 rounded-lg px-3 py-2.5 flex items-center justify-between gap-3 text-xs"><div><div className="font-semibold text-slate-800">{row.name}</div><div className="text-slate-500 mt-0.5">{row.value} công việc</div></div><span className={`rounded-full px-2 py-1 font-semibold ${isClosed ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>{isClosed ? 'Đã đóng' : 'Đang mở'}</span></div>; })}</div>
       </div>
 
       {/* Main Charts Row */}
@@ -186,47 +184,11 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
           </div>
         </div>
 
-        {/* Status Distribution Donut Chart */}
+        {/* Status distribution */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                <PieIcon className="w-4 h-4 text-cyan-600" />
-                Cơ cấu trạng thái công việc (Status Breakdown)
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">Tỉ lệ phân bổ các giai đoạn trong quy trình</p>
-            </div>
-          </div>
-
-          <div className="h-64 flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={statusChartData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={85}
-                  paddingAngle={3}
-                  dataKey="value"
-                  label={({ name, percent }: any) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                  labelLine={false}
-                >
-                  {statusChartData.map((_entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1e293b',
-                    color: '#fff',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+          <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2"><BarChart2 className="w-4 h-4 text-cyan-600" />Phân bổ theo trạng thái</h3>
+          <p className="text-xs text-slate-500 mt-1 mb-4">So sánh số lượng giữa các trạng thái Redmine; thanh dài nhất là trạng thái có nhiều việc nhất.</p>
+          <div className="space-y-3 max-h-64 overflow-y-auto pr-1">{statusChartData.map((row, index) => { const pct = total ? Math.round(row.value / total * 100) : 0; const max = statusChartData[0]?.value || 1; return <div key={row.id}><div className="flex justify-between text-xs mb-1"><span className="font-semibold text-slate-700">{row.name}</span><span className="text-slate-500">{row.value} · {pct}%</span></div><div className="h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.max(2, row.value / max * 100)}%`, backgroundColor: COLORS[index % COLORS.length] }} /></div></div>; })}</div>
         </div>
       </div>
 

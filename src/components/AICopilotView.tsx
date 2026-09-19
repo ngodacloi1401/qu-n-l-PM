@@ -71,7 +71,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
 
   return <div className="space-y-4">
     <div className="bg-slate-900 text-white rounded-xl p-5 flex flex-wrap items-end justify-between gap-4">
-      <div><h2 className="font-bold flex items-center gap-2"><Sparkles className="w-5 h-5" />AI PM · Chat theo phiên</h2><p className="text-xs text-slate-300 mt-2">{selectedProject?.name || 'Tất cả dự án'} · Đang xem {issues.length} công việc theo bộ lọc · Đã tải {scope.loadedCount}/{totalAvailable}.{isDataLoading ? ' Đang đồng bộ dữ liệu…' : (scope.loadedCount ?? issues.length) < totalAvailable ? ' Chưa đủ dữ liệu toàn bộ phạm vi.' : ''}</p></div>
+      <div><h2 className="font-bold flex items-center gap-2"><Sparkles className="w-5 h-5" />AI PM · Chat theo phiên</h2><p className="text-xs text-slate-300 mt-2">{selectedProject?.name || 'Tất cả dự án'} · AI sử dụng toàn bộ {issues.length}/{totalAvailable} công việc của dự án.{isDataLoading ? ' Đang đồng bộ dữ liệu…' : (scope.loadedCount ?? issues.length) < totalAvailable ? ' Hãy chờ tải đủ dữ liệu trước khi hỏi.' : ''}</p></div>
       <div className="space-y-2 w-full sm:w-64">
         <label htmlFor="ai-model-select" className="text-xs">Model AI</label>
         <select id="ai-model-select" value={customMode ? 'custom' : model} disabled={busy} onChange={e => { setCustomMode(e.target.value === 'custom'); if (e.target.value !== 'custom') setModel(e.target.value); }} className="block w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm">
@@ -102,7 +102,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
           <textarea aria-label="Tin nhắn cho AI" value={draft} onChange={e => setDraft(e.target.value)} maxLength={4000} disabled={busy || !storageKey} rows={3} placeholder="Nhập câu hỏi hoặc yêu cầu báo cáo…" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void submit(draft); } }} className="flex-1 min-w-0 border border-slate-300 rounded-lg p-3 text-sm" />
           <button type="submit" disabled={busy || isDataLoading || !storageKey || !draft.trim()} className="bg-indigo-600 text-white rounded-lg px-4 py-3 text-sm disabled:opacity-40"><Send className="w-4 h-4 inline mr-1" />Gửi</button>
         </form>
-        <p className="text-xs text-slate-500">Phiên lưu trên trình duyệt, riêng theo dự án và kết nối Redmine. AI nhận tối đa 24 tin nhắn gần nhất cùng thống kê và dữ liệu issue mẫu; hỏi bằng mã issue để ưu tiên đúng công việc. Shift + Enter để xuống dòng.</p>
+        <p className="text-xs text-slate-500">Phiên lưu trên trình duyệt, riêng theo dự án và kết nối Redmine. Mỗi câu hỏi gửi thống kê và danh sách nén của toàn bộ issue trong dự án, cùng chi tiết các issue liên quan. Shift + Enter để xuống dòng.</p>
       </div>
     </div>
   </div>;

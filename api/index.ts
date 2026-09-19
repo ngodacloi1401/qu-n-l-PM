@@ -4,7 +4,7 @@ import { geminiErrorResponse } from '../lib/geminiErrors.js';
 import { createChatRequest } from '../lib/geminiChat.js';
 
 const app = express();
-app.use(express.json({ limit: '256kb' }));
+app.use(express.json({ limit: '4mb' }));
 app.use((error: any, _req: Request, res: Response, next: any) => {
   if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'Dữ liệu báo cáo quá lớn. Hãy tải lại trang để dùng phiên bản mới.' });
   next(error);
@@ -300,7 +300,7 @@ app.post('/api/gemini/pm-insights', async (req: Request, res: Response) => {
     const ai = new GoogleGenAI({
       apiKey,
       httpOptions: {
-        timeout: 25000,
+        timeout: 28000,
         retryOptions: { attempts: 1 },
         headers: {
           'User-Agent': 'aistudio-build',

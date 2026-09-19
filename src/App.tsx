@@ -351,7 +351,7 @@ export default function App() {
             document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
           }}>Xuất dữ liệu đã tải (JSON)</button>
         </div>}
-        {(activeView === 'kanban' || activeView === 'list' || activeView === 'analytics' || activeView === 'ai') && (
+        {(activeView === 'kanban' || activeView === 'list' || activeView === 'analytics') && (
           <FilterBar
             filters={filters}
             onFilterChange={setFilters}
@@ -426,8 +426,8 @@ export default function App() {
             isDataLoading={isLoading}
             totalAvailable={totalAvailableCount}
             statuses={statuses}
-            issues={filteredIssues}
-            scope={{ loadedCount: issues.length, filters: { ...filters } }}
+            issues={issues}
+            scope={{ loadedCount: issues.length }}
             selectedProject={selectedProject}
           />
         </div>

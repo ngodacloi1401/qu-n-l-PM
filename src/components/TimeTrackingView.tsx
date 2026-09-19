@@ -31,9 +31,11 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
   const [loadingEntries, setLoadingEntries] = useState(true);
   const [reload, setReload] = useState(0);
   const [entryPage, setEntryPage] = useState(1);
+  const [selectedUserId, setSelectedUserId] = useState('all');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const requestId = useRef(0);
   useEffect(() => { const id = ++requestId.current; setLoadingEntries(true); setErrorMsg(null); setEntryPage(1); fetchReportTimeEntries(String(selectedProject?.id || 'all'), from, to, reload > 0).then(rows => { if (id === requestId.current) setEntries(rows); }).catch(e => { if (id === requestId.current) setErrorMsg(e.message); }).finally(() => { if (id === requestId.current) setLoadingEntries(false); }); }, [selectedProject?.id, from, to, reload]);
+  useEffect(() => { setSelectedUserId('all'); }, [selectedProject?.id, from, to]);
   const [showLogModal, setShowLogModal] = useState(false);
   const [issueId, setIssueId] = useState<string>('');
   const [hours, setHours] = useState<string>('1.0');
@@ -42,18 +44,20 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const totalHours = entries.reduce((acc, curr) => acc + (Number(curr.hours) || 0), 0);
+  const users = [...new Map(entries.map((entry) => [entry.user.id, entry.user])).values()].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+  const filteredEntries = selectedUserId === 'all' ? entries : entries.filter((entry) => String(entry.user.id) === selectedUserId);
+  const totalHours = filteredEntries.reduce((acc, curr) => acc + (Number(curr.hours) || 0), 0);
 
   // Group by user
   const userHoursMap: Record<string, number> = {};
-  entries.forEach((te) => {
+  filteredEntries.forEach((te) => {
     const uname = te.user?.name || 'Khác';
     userHoursMap[uname] = (userHoursMap[uname] || 0) + (Number(te.hours) || 0);
   });
   const userHoursList = Object.entries(userHoursMap).sort((a, b) => b[1] - a[1]);
   const entryPageSize = 100;
-  const entryPageCount = Math.max(1, Math.ceil(entries.length / entryPageSize));
-  const visibleEntries = entries.slice((entryPage - 1) * entryPageSize, entryPage * entryPageSize);
+  const entryPageCount = Math.max(1, Math.ceil(filteredEntries.length / entryPageSize));
+  const visibleEntries = filteredEntries.slice((entryPage - 1) * entryPageSize, entryPage * entryPageSize);
 
   const handleLogTime = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,8 +115,9 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
         <div className="flex flex-wrap gap-2 items-end">
           <label className="text-xs">Từ ngày<input aria-label="Log time từ ngày" type="date" value={from} onChange={e => setFrom(e.target.value)} className="block border rounded p-2 mt-1" /></label>
           <label className="text-xs">Đến ngày<input aria-label="Log time đến ngày" type="date" value={to} onChange={e => setTo(e.target.value)} className="block border rounded p-2 mt-1" /></label>
+          <label className="text-xs">Thành viên<select aria-label="Lọc log time theo thành viên" value={selectedUserId} onChange={e => { setSelectedUserId(e.target.value); setEntryPage(1); }} className="block border rounded p-2 mt-1 min-w-44 bg-white"><option value="all">Tất cả thành viên</option>{users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
           <button disabled={loadingEntries} onClick={() => setReload(n => n + 1)} className="border rounded-lg px-3 py-2 text-xs"><RefreshCw className={"inline w-4 h-4 mr-1 " + (loadingEntries ? 'animate-spin' : '')} />Tải lại</button>
-          <button disabled={loadingEntries || !entries.length} onClick={() => downloadTimeEntriesExcel(entries, { project: selectedProject?.name || 'Tất cả dự án', from, to })} className="bg-emerald-600 text-white rounded-lg px-3 py-2 text-xs disabled:opacity-40"><Download className="inline w-4 h-4 mr-1" />Xuất Excel</button>
+          <button disabled={loadingEntries || !filteredEntries.length} onClick={() => downloadTimeEntriesExcel(filteredEntries, { project: selectedProject?.name || 'Tất cả dự án', from, to })} className="bg-emerald-600 text-white rounded-lg px-3 py-2 text-xs disabled:opacity-40"><Download className="inline w-4 h-4 mr-1" />Xuất Excel</button>
         <button
           onClick={() => setShowLogModal(true)}
           className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
@@ -131,7 +136,7 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
             Tổng giờ đã log
           </div>
           <div className="text-2xl font-bold text-slate-900">{totalHours.toFixed(1)} hrs</div>
-          <div className="text-xs text-slate-500 mt-1">{entries.length} lượt ghi nhận trong khoảng ngày</div>
+          <div className="text-xs text-slate-500 mt-1">{filteredEntries.length} lượt ghi nhận{selectedUserId !== 'all' ? ` / ${entries.length} tổng lượt` : ''} trong khoảng ngày</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
@@ -147,7 +152,7 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
             Trung bình mỗi lượt log
           </div>
           <div className="text-2xl font-bold text-emerald-600">
-            {entries.length > 0 ? (totalHours / entries.length).toFixed(1) : 0} hrs
+            {filteredEntries.length > 0 ? (totalHours / filteredEntries.length).toFixed(1) : 0} hrs
           </div>
           <div className="text-xs text-slate-500 mt-1">Hiệu suất phân bổ công việc</div>
         </div>
@@ -189,7 +194,7 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
         <div className="lg:col-span-2 bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
           <h3 className="font-bold text-sm text-slate-900 mb-3 flex items-center gap-2">
             <FileText className="w-4 h-4 text-slate-600" />
-            Chi tiết tất cả lượt ghi nhận ({entries.length})
+            Chi tiết lượt ghi nhận ({filteredEntries.length}{selectedUserId !== 'all' ? ` / ${entries.length}` : ''})
           </h3>
 
           <div className="overflow-x-auto max-h-80 overflow-y-auto">
@@ -204,7 +209,7 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {entries.length === 0 ? (
+                {filteredEntries.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-8 text-center text-slate-400">
                       Chưa có nhật ký thời gian nào
@@ -234,9 +239,9 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
               </tbody>
             </table>
           </div>
-          {entries.length > entryPageSize && (
+          {filteredEntries.length > entryPageSize && (
             <div className="flex items-center justify-between gap-3 pt-3 text-xs text-slate-500">
-              <span>Hiển thị {(entryPage - 1) * entryPageSize + 1}–{Math.min(entryPage * entryPageSize, entries.length)} / {entries.length} lượt log</span>
+              <span>Hiển thị {(entryPage - 1) * entryPageSize + 1}–{Math.min(entryPage * entryPageSize, filteredEntries.length)} / {filteredEntries.length} lượt log</span>
               <div className="flex items-center gap-2">
                 <button className="border rounded px-2 py-1 disabled:opacity-40" disabled={entryPage === 1} onClick={() => setEntryPage((p) => Math.max(1, p - 1))}>Trang trước</button>
                 <span>{entryPage} / {entryPageCount}</span>

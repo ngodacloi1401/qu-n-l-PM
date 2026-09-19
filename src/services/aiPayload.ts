@@ -3,7 +3,7 @@ import type { RedmineStatus } from '../types/redmine';
 import { calculatePMAnalytics, vietnamToday } from './pmAnalytics';
 
 export interface ChatMessage { role: 'user' | 'assistant'; text: string; model?: string }
-export interface ChatScope { loadedCount?: number; filters?: Record<string, string | number | boolean> }
+export interface ChatScope { loadedCount?: number }
 export function buildAIChatPayload(messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}) {
   const latest = messages.at(-1)?.text.toLowerCase() ?? '';
   const references = messages.slice(-8).map(m => m.text).join('\n');
@@ -17,18 +17,34 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
   const bounded = buildAIReportPayload('risk', projectName, sample, { totalIssues: stats.total, closedCount: stats.closed, inProgressCount: stats.inProgress, overdueCount: stats.overdueIssues.length, blockedCount: stats.blockedIssues.length }, model);
   const history = messages.slice(-24).map(m => ({ role: m.role, text: m.text.slice(0, 8000) }));
   while (history.at(0)?.role === 'assistant') history.shift();
-  const breakdown = (select: (issue: RedmineIssue) => { id: number; name: string }) => {
+  const breakdown = (select: (issue: RedmineIssue) => { id: number; name: string } | undefined) => {
     const rows = new Map<number, { id: number; name: string; count: number }>();
-    issues.forEach(i => { const v = select(i); const row = rows.get(v.id) ?? { id: v.id, name: v.name.slice(0, 80), count: 0 }; row.count++; rows.set(v.id, row); });
-    return [...rows.values()].slice(0, 100);
+    issues.forEach(i => { const v = select(i); if (!v) return; const row = rows.get(v.id) ?? { id: v.id, name: v.name.slice(0, 80), count: 0 }; row.count++; rows.set(v.id, row); });
+    return [...rows.values()];
   };
   const loadedCount = scope.loadedCount ?? issues.length;
-  const filters = Object.fromEntries(Object.entries(scope.filters || {}).map(([k, v]) => [k, typeof v === 'string' ? v.slice(0, 200) : v]));
-  const payload = { ...bounded, mode: 'chat', messages: history, context: { today: vietnamToday(), loadedCount, displayedCount: issues.length, filters, totalAvailable, sampleCount: bounded.issues.length, isComplete: loadedCount === totalAvailable,
-    statuses: breakdown(i => i.status).map(row => ({ ...row, is_closed: statuses.find(s => s.id === row.id)?.is_closed })), trackers: breakdown(i => i.tracker), workload: stats.workloadAll.slice(0, 100).map(row => ({ ...row, name: row.name.slice(0, 80) })) } };
-  while (history.length > 1 && new TextEncoder().encode(JSON.stringify(payload)).byteLength > 200000) {
+  const compactRows = (subjectLength: number) => issues.map(i => [
+    i.id, i.subject.slice(0, subjectLength), i.project?.id ?? null, i.tracker?.id ?? null, i.status?.id ?? null,
+    i.priority?.id ?? null, i.assigned_to?.id ?? null, i.done_ratio ?? 0, i.start_date ?? '', i.due_date ?? '',
+    i.estimated_hours ?? null, i.spent_hours ?? null, i.updated_on?.slice(0, 10) ?? '',
+  ]);
+  const context = {
+    today: vietnamToday(), loadedCount, totalAvailable, allIssueCount: issues.length,
+    detailedIssueCount: bounded.issues.length, isComplete: loadedCount === totalAvailable && issues.length === totalAvailable,
+    issueSchema: ['id', 'subject', 'projectId', 'trackerId', 'statusId', 'priorityId', 'assigneeId', 'doneRatio', 'startDate', 'dueDate', 'estimatedHours', 'spentHours', 'updatedDate'],
+    allIssues: compactRows(160),
+    statuses: breakdown(i => i.status).map(row => ({ ...row, is_closed: statuses.find(s => s.id === row.id)?.is_closed })),
+    trackers: breakdown(i => i.tracker), priorities: breakdown(i => i.priority), projects: breakdown(i => i.project),
+    workload: stats.workloadAll.map(row => ({ ...row, name: row.name.slice(0, 80) })),
+  };
+  const payload = { ...bounded, mode: 'chat', messages: history, context };
+  const bytes = () => new TextEncoder().encode(JSON.stringify(payload)).byteLength;
+  if (bytes() > 3_300_000) context.allIssues = compactRows(80);
+  if (bytes() > 3_300_000) context.allIssues = compactRows(0);
+  while (history.length > 1 && bytes() > 3_600_000) {
     history.shift(); while (history.at(0)?.role === 'assistant') history.shift();
   }
+  if (bytes() > 3_800_000) throw new Error('Dữ liệu dự án vượt giới hạn gửi AI. Hãy chọn một dự án cụ thể thay vì Tất cả dự án.');
   return payload;
 }
 
