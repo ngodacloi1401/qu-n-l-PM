@@ -3,7 +3,7 @@ import type { RedmineStatus } from '../types/redmine';
 import { calculatePMAnalytics, vietnamToday } from './pmAnalytics';
 
 export interface ChatMessage { role: 'user' | 'assistant'; text: string; model?: string }
-export interface ChatScope { loadedCount?: number }
+export interface ChatScope { loadedCount?: number; availableModels?: string[] }
 export function buildAIChatPayload(messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}) {
   const latest = messages.at(-1)?.text.toLowerCase() ?? '';
   const references = messages.slice(-8).map(m => m.text).join('\n');
@@ -30,6 +30,7 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
   ]);
   const context = {
     today: vietnamToday(), loadedCount, totalAvailable, allIssueCount: issues.length,
+    availableModels: (scope.availableModels || []).slice(0, 100),
     detailedIssueCount: bounded.issues.length, isComplete: loadedCount === totalAvailable && issues.length === totalAvailable,
     issueSchema: ['id', 'subject', 'projectId', 'trackerId', 'statusId', 'priorityId', 'assigneeId', 'doneRatio', 'startDate', 'dueDate', 'estimatedHours', 'spentHours', 'updatedDate'],
     allIssues: compactRows(160),

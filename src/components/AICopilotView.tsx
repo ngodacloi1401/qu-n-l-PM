@@ -20,6 +20,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const [modelOptions, setModelOptions] = useState(AVAILABLE_AI_MODELS);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsSource, setModelsSource] = useState<'api' | 'fallback'>('fallback');
+  const [modelNotice, setModelNotice] = useState('');
   const [store, setStore] = useState<SessionStore>({ sessions: [], activeId: '' });
   const [storageKey, setStorageKey] = useState('');
   const [draft, setDraft] = useState('');
@@ -40,6 +41,10 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
         setModelsSource('api');
         const current = customMode ? custom.trim() : model;
         if (available.some(item => item.id === current)) { setModel(current); setCustomMode(false); }
+        else if (!customMode) {
+          const next = available.find(item => item.id === 'gemini-2.5-flash') || available[0];
+          setModel(next.id); setModelNotice(`Model cũ không khả dụng với API key. Đã chuyển sang ${next.name}.`);
+        }
       }
     } catch { setModelOptions(AVAILABLE_AI_MODELS); setModelsSource('fallback'); }
     finally { setModelsLoading(false); }
@@ -75,7 +80,12 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     setStore(pending); if (!retry) setDraft('');
     await writeLocalCache(storageKey, pending);
     try {
-      const response = await askGeminiChat(messages, selectedProject?.name || 'Tất cả dự án', issues, statuses, totalAvailable, activeModel, scope);
+      const response = await askGeminiChat(messages, selectedProject?.name || 'Tất cả dự án', issues, statuses, totalAvailable, activeModel, { ...scope, availableModels: modelsSource === 'api' ? modelOptions.map(item => item.id) : [] });
+      if (response.fallbackOccurred && response.usedModel) {
+        const option = modelOptions.find(item => item.id === response.usedModel);
+        setModel(response.usedModel); setCustomMode(!option); if (!option) setCustom(response.usedModel);
+        setModelNotice(`Model ${activeModel} không dùng được. Hệ thống đã chuyển sang ${option?.name || response.usedModel}.`);
+      }
       const answer: ChatMessage = { role: 'assistant', text: response.result, model: response.usedModel || activeModel };
       const latest = await readLocalCache<SessionStore>(storageKey) || pending;
       const existing = latest.sessions.find(s => s.id === sessionId);
@@ -98,6 +108,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
         </select>
         {customMode && <input aria-label="Mã model AI tùy chỉnh" value={custom} onChange={e => setCustom(e.target.value)} disabled={busy} className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm" placeholder="vd: gemini-2.5-flash" />}
         <p className="text-[11px] text-slate-400">{modelsSource === 'api' ? 'Danh sách theo quyền của Gemini API Key hiện tại.' : 'Đang dùng danh sách dự phòng; vẫn có thể nhập mã model khác.'}</p>
+        {modelNotice && <p role="status" className="text-[11px] text-amber-300">{modelNotice}</p>}
       </div>
     </div>
     <div className="flex flex-wrap gap-2 items-center">

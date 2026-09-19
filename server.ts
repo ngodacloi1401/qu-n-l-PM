@@ -390,10 +390,15 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
 
     // Fallback chain in case of model spike / 503 high demand / availability issues
     const candidateModels: string[] = [primaryModel];
-    for (const m of [primaryModel === 'gemini-2.5-flash' ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash']) {
+    const availableModels = Array.isArray(req.body?.context?.availableModels) ? req.body.context.availableModels.filter((id: any) => typeof id === 'string') : [];
+    const fallbackModels = availableModels.length
+      ? ['gemini-2.5-flash', 'gemini-2.5-flash-lite', ...availableModels].filter(id => availableModels.includes(id))
+      : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+    for (const m of fallbackModels) {
       if (!candidateModels.includes(m)) {
         candidateModels.push(m);
       }
+      if (candidateModels.length >= 4) break;
     }
 
     let lastError: any = null;
@@ -406,7 +411,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
         const generatePromise = ai.models.generateContent({
           model: candidate,
           contents: chat ? chat.contents : prompt,
-          config: chat ? { systemInstruction: chat.systemInstruction, maxOutputTokens: 4096 } : undefined,
+          config: chat ? { systemInstruction: chat.systemInstruction, maxOutputTokens: 8192 } : undefined,
         });
         const response: any = await generatePromise;
         if (response && response.text) {
@@ -417,7 +422,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
         }
       } catch (err: any) {
         lastError = err;
-        if (![404, 500, 502, 503, 504].includes(Number(err?.status || err?.code))) break;
+        if (![400, 404, 429, 500, 502, 503, 504].includes(Number(err?.status || err?.code))) break;
         console.warn(`[AI Route] Model ${candidate} failed:`, geminiErrorResponse(err).status);
       }
     }

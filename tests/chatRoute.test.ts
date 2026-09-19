@@ -34,6 +34,28 @@ test('Gemini chat carries both turns to the SDK with current context and selecte
   } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 
+test('chat falls back to a model allowed by the active API key when the selected model is missing', async () => {
+  const originalFetch = globalThis.fetch;
+  const attempted: string[] = [];
+  globalThis.fetch = async (url) => {
+    const model = decodeURIComponent(String(url)).match(/models\/(.*?):generateContent/)?.[1] || '';
+    attempted.push(model);
+    if (model === 'gemini-missing') return new Response(JSON.stringify({ error: { code: 404, message: 'not found', status: 'NOT_FOUND' } }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'Đã dùng model khả dụng' }] }, finishReason: 'STOP' }] }), { headers: { 'Content-Type': 'application/json' } });
+  };
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const port = (server.address() as { port: number }).port;
+  try {
+    const payload = buildAIChatPayload([{ role: 'user', text: 'Phân tích dự án' }], 'Test', [], [], 0, 'gemini-missing', { loadedCount: 0, availableModels: ['gemini-3.8-flash'] });
+    const response = await originalFetch(`http://127.0.0.1:${port}/api/gemini/pm-insights`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-gemini-api-key': 'test-only-key' }, body: JSON.stringify(payload) });
+    const data: any = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(data));
+    assert.equal(data.usedModel, 'gemini-3.8-flash');
+    assert.equal(data.fallbackOccurred, true);
+    assert.deepEqual(attempted, ['gemini-missing', 'gemini-3.8-flash']);
+  } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
 test('ten thousand project issues remain complete in the compact AI context', () => {
   const issues = Array.from({ length: 10_000 }, (_, index) => ({
     id: index + 1,
