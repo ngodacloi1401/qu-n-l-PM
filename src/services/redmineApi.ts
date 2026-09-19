@@ -698,7 +698,7 @@ export interface AIModelOption {
   isDefault?: boolean;
 }
 
-export type AIProvider = 'gemini' | 'openai' | 'anthropic';
+export type AIProvider = 'gemini' | 'openai' | 'codex' | 'anthropic';
 
 export const AVAILABLE_AI_MODELS: AIModelOption[] = [
   { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', description: 'Model Flash mới nhất cho phân tích phức tạp', badge: 'Mới nhất' },
@@ -736,10 +736,17 @@ export const AVAILABLE_AI_MODELS: AIModelOption[] = [
 export const FALLBACK_AI_MODELS: Record<AIProvider, AIModelOption[]> = {
   gemini: AVAILABLE_AI_MODELS,
   openai: [
-    { id: 'gpt-5.2', name: 'GPT-5.2', description: 'Model OpenAI đa dụng', isDefault: true },
-    { id: 'gpt-5', name: 'GPT-5', description: 'Model OpenAI cho suy luận và phân tích' },
+    { id: 'gpt-6-astra', name: 'GPT-6 Astra', description: 'Model OpenAI mạnh nhất', isDefault: true },
+    { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', description: 'Cân bằng chất lượng và chi phí' },
+    { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', description: 'Nhanh và tiết kiệm' },
+    { id: 'gpt-5.2', name: 'GPT-5.2', description: 'Model OpenAI đa dụng' },
     { id: 'gpt-4.1', name: 'GPT-4.1', description: 'Model ổn định với ngữ cảnh dài' },
-    { id: 'gpt-4o', name: 'GPT-4o', description: 'Model đa dụng tốc độ cao' },
+  ],
+  codex: [
+    { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex', description: 'Model Codex mới cho tác vụ coding dài', isDefault: true },
+    { id: 'gpt-5.2-codex', name: 'GPT-5.2 Codex', description: 'Model Codex cho coding agent' },
+    { id: 'gpt-5.1-codex-max', name: 'GPT-5.1 Codex Max', description: 'Model Codex cho tác vụ chạy dài' },
+    { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex', description: 'Model Codex chuyên coding' },
   ],
   anthropic: [
     { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', description: 'Model Claude cân bằng', isDefault: true },

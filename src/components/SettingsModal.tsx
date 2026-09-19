@@ -207,14 +207,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                <span>OpenAI API Key (ChatGPT models)</span>
+                <span>OpenAI API Key (ChatGPT & Codex)</span>
               </label>
               <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-[11px] text-indigo-600 hover:underline flex items-center gap-0.5">
                 <span>Lấy API key</span><ExternalLink className="w-2.5 h-2.5" />
               </a>
             </div>
             <input type="password" value={openAIKey} onChange={(e) => setOpenAIKey(e.target.value)} placeholder="sk-... (OpenAI API Key)" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500" />
-            <p className="text-[11px] text-slate-400 mt-1">Dùng API Platform của OpenAI; gói ChatGPT cá nhân không tự cung cấp API key.</p>
+            <p className="text-[11px] text-slate-400 mt-1">Dùng chung cho model GPT và Codex qua OpenAI API; gói ChatGPT cá nhân không tự cung cấp API key.</p>
           </div>
 
           <div>

@@ -6,7 +6,7 @@ import { createChatRequest } from '../lib/geminiChat';
 import { buildAIChatPayload, type ChatMessage } from '../src/services/aiPayload';
 import type { RedmineIssue } from '../src/types/redmine';
 import { listGeminiTextModels } from '../lib/geminiModels';
-import { listAnthropicModels, listOpenAIModels } from '../lib/aiProviders';
+import { listAnthropicModels, listOpenAICodexModels, listOpenAIModels } from '../lib/aiProviders';
 
 test('Gemini chat carries both turns to the SDK with current context and selected model', async () => {
   const originalFetch = globalThis.fetch;
@@ -118,13 +118,14 @@ test('OpenAI and Anthropic model discovery keeps chat models returned for the ac
   try {
     globalThis.fetch = async (url) => {
       if (String(url).includes('openai.com')) return new Response(JSON.stringify({ data: [
-        { id: 'gpt-5.2' }, { id: 'gpt-image-1' }, { id: 'text-embedding-3-large' }, { id: 'o4-mini' },
+        { id: 'gpt-5.2' }, { id: 'gpt-5.3-codex' }, { id: 'gpt-image-1' }, { id: 'text-embedding-3-large' }, { id: 'o4-mini' },
       ] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       return new Response(JSON.stringify({ data: [
         { id: 'claude-sonnet-5', display_name: 'Claude Sonnet 5' }, { id: 'not-claude', display_name: 'Other' },
       ] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     };
     assert.deepEqual((await listOpenAIModels('test-key')).map(item => item.id), ['o4-mini', 'gpt-5.2']);
+    assert.deepEqual((await listOpenAICodexModels('test-key')).map(item => item.id), ['gpt-5.3-codex']);
     assert.deepEqual((await listAnthropicModels('test-key')).map(item => item.id), ['claude-sonnet-5']);
   } finally { globalThis.fetch = originalFetch; }
 });
@@ -147,6 +148,10 @@ test('provider chat routes send the full PM prompt to OpenAI and Anthropic', asy
     assert.equal(openAI.status, 200, await openAI.clone().text());
     assert.equal((await openAI.json()).result, 'OpenAI đã phân tích dự án.');
 
+    const codex = await originalFetch(`http://127.0.0.1:${port}/api/ai/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-openai-api-key': 'openai-test' }, body: JSON.stringify({ ...base, provider: 'codex', model: 'gpt-5.3-codex' }) });
+    assert.equal(codex.status, 200, await codex.clone().text());
+    assert.equal((await codex.json()).result, 'OpenAI đã phân tích dự án.');
+
     const anthropic = await originalFetch(`http://127.0.0.1:${port}/api/ai/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-anthropic-api-key': 'anthropic-test' }, body: JSON.stringify({ ...base, provider: 'anthropic', model: 'claude-sonnet-5' }) });
     assert.equal(anthropic.status, 200, await anthropic.clone().text());
     assert.equal((await anthropic.json()).result, 'Claude đã phân tích dự án.');
@@ -154,8 +159,10 @@ test('provider chat routes send the full PM prompt to OpenAI and Anthropic', asy
     assert.equal(captured[0].body.model, 'gpt-5.2');
     assert.match(captured[0].body.instructions, /Test Project/);
     assert.equal(captured[0].body.store, false);
-    assert.equal(captured[1].body.model, 'claude-sonnet-5');
-    assert.match(captured[1].body.system, /allIssues/);
-    assert.equal(captured[1].headers.get('anthropic-version'), '2023-06-01');
+    assert.equal(captured[1].body.model, 'gpt-5.3-codex');
+    assert.match(captured[1].body.instructions, /allIssues/);
+    assert.equal(captured[2].body.model, 'claude-sonnet-5');
+    assert.match(captured[2].body.system, /allIssues/);
+    assert.equal(captured[2].headers.get('anthropic-version'), '2023-06-01');
   } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
 });

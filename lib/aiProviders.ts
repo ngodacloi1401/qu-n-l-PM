@@ -1,4 +1,4 @@
-export type AIProvider = 'openai' | 'anthropic';
+export type AIProvider = 'openai' | 'codex' | 'anthropic';
 
 export interface ProviderModel {
   id: string;
@@ -8,7 +8,7 @@ export interface ProviderModel {
 
 const OPENAI_UNSUITABLE = /(image|realtime|audio|transcrib|tts|search|embedding|moderation|sora|codex)/i;
 
-export async function listOpenAIModels(apiKey: string): Promise<ProviderModel[]> {
+async function fetchOpenAIModelIds(apiKey: string): Promise<string[]> {
   const response = await fetch('https://api.openai.com/v1/models', {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
@@ -16,10 +16,22 @@ export async function listOpenAIModels(apiKey: string): Promise<ProviderModel[]>
   const data: any = await response.json();
   return (Array.isArray(data.data) ? data.data : [])
     .map((item: any) => String(item?.id || ''))
+    .filter(Boolean)
+    .filter((id: string, index: number, rows: string[]) => rows.indexOf(id) === index);
+}
+
+export async function listOpenAIModels(apiKey: string): Promise<ProviderModel[]> {
+  return (await fetchOpenAIModelIds(apiKey))
     .filter((id: string) => /^(gpt-|chatgpt-|o\d)/i.test(id) && !OPENAI_UNSUITABLE.test(id))
-    .filter((id: string, index: number, rows: string[]) => rows.indexOf(id) === index)
     .sort((a: string, b: string) => b.localeCompare(a, undefined, { numeric: true }))
     .map((id: string) => ({ id, name: id, description: 'Model có trong tài khoản OpenAI hiện tại' }));
+}
+
+export async function listOpenAICodexModels(apiKey: string): Promise<ProviderModel[]> {
+  return (await fetchOpenAIModelIds(apiKey))
+    .filter((id: string) => /codex/i.test(id) && !/(deprecated|embedding|image|audio|realtime)/i.test(id))
+    .sort((a: string, b: string) => b.localeCompare(a, undefined, { numeric: true }))
+    .map((id: string) => ({ id, name: id, description: 'Model Codex có trong tài khoản OpenAI hiện tại' }));
 }
 
 export async function listAnthropicModels(apiKey: string): Promise<ProviderModel[]> {
@@ -36,7 +48,7 @@ export async function listAnthropicModels(apiKey: string): Promise<ProviderModel
 }
 
 function responseError(provider: AIProvider, response: Response, detail: string) {
-  const label = provider === 'openai' ? 'OpenAI' : 'Anthropic';
+  const label = provider === 'anthropic' ? 'Anthropic' : provider === 'codex' ? 'OpenAI Codex' : 'OpenAI';
   const status = response.status;
   if (status === 401 || status === 403) return Object.assign(new Error(`${label} API Key không hợp lệ hoặc chưa có quyền sử dụng model.`), { status });
   if (status === 404) return Object.assign(new Error(`Model ${label} đã chọn không tồn tại hoặc API key chưa có quyền truy cập.`), { status });

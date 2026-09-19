@@ -12,11 +12,12 @@ const PROVIDER_KEY = 'redmine_ai_provider';
 const PROVIDERS: Array<{ id: AIProvider; name: string }> = [
   { id: 'gemini', name: 'Google Gemini' },
   { id: 'openai', name: 'OpenAI / ChatGPT' },
+  { id: 'codex', name: 'OpenAI Codex' },
   { id: 'anthropic', name: 'Anthropic / Claude' },
 ];
 const savedProvider = (): AIProvider => {
   const value = localStorage.getItem(PROVIDER_KEY);
-  return value === 'openai' || value === 'anthropic' ? value : 'gemini';
+  return value === 'openai' || value === 'codex' || value === 'anthropic' ? value : 'gemini';
 };
 const savedModel = (provider: AIProvider) => localStorage.getItem(`redmine_ai_model_${provider}`)
   || (provider === 'gemini' ? localStorage.getItem('redmine_ai_model') : '')
@@ -139,7 +140,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
         <select id="ai-model-select" value={customMode ? 'custom' : model} disabled={busy} onChange={e => { setCustomMode(e.target.value === 'custom'); if (e.target.value !== 'custom') setModel(e.target.value); }} className="block w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm">
           {modelOptions.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}<option value="custom">Nhập mã Model khác</option>
         </select>
-        {customMode && <input aria-label="Mã model AI tùy chỉnh" value={custom} onChange={e => setCustom(e.target.value)} disabled={busy} className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm" placeholder={provider === 'gemini' ? 'vd: gemini-2.5-flash' : provider === 'openai' ? 'vd: gpt-5.2' : 'vd: claude-sonnet-5'} />}
+        {customMode && <input aria-label="Mã model AI tùy chỉnh" value={custom} onChange={e => setCustom(e.target.value)} disabled={busy} className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm" placeholder={provider === 'gemini' ? 'vd: gemini-2.5-flash' : provider === 'codex' ? 'vd: gpt-5.3-codex' : provider === 'openai' ? 'vd: gpt-6-astra' : 'vd: claude-sonnet-5'} />}
         <p className="text-[11px] text-slate-400">{modelsSource === 'api' ? `Danh sách theo quyền của ${PROVIDERS.find(item => item.id === provider)?.name} API Key.` : 'Đang dùng danh sách dự phòng; nhập API key trong Cài đặt để tải đúng model được cấp quyền.'}</p>
         {modelNotice && <p role="status" className="text-[11px] text-amber-300">{modelNotice}</p>}
       </div>
