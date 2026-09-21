@@ -4,6 +4,7 @@ import { geminiErrorResponse } from '../lib/geminiErrors.js';
 import { createChatRequest } from '../lib/geminiChat.js';
 import { listGeminiTextModels } from '../lib/geminiModels.js';
 import { registerProviderAIRoutes } from '../lib/aiRoutes.js';
+import { registerAuthRoutes, requireAuth } from '../lib/auth.js';
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
@@ -81,6 +82,14 @@ async function fetchRedmine(
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Authentication routes
+registerAuthRoutes(app);
+
+// Enforce authentication for sensitive APIs
+app.use('/api/redmine', requireAuth);
+app.use('/api/gemini', requireAuth);
+app.use('/api/ai', requireAuth);
 
 app.get('/api/redmine/me', async (req: Request, res: Response) => {
   try {

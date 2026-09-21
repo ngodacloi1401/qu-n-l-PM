@@ -136,10 +136,10 @@ git push -u origin main --force`;
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-indigo-600 font-bold">REDMINE_API_KEY</span>=
-                  <span className="text-slate-800">440da87a37415860ff240080d18ba34b21536eb8</span>
+                  <span className="text-slate-800">[Khóa API Redmine của bạn]</span>
                 </div>
                 <button
-                  onClick={() => copySnippet('440da87a37415860ff240080d18ba34b21536eb8', 3)}
+                  onClick={() => copySnippet('[Khóa API Redmine của bạn]', 3)}
                   className="text-[11px] text-slate-500 hover:text-indigo-600"
                 >
                   {copiedIndex === 3 ? 'Đã chép' : 'Copy'}

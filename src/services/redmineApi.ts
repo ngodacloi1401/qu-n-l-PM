@@ -25,7 +25,7 @@ const STORAGE_KEY_URL = 'redmine_pm_base_url';
 const STORAGE_KEY_API_KEY = 'redmine_pm_api_key';
 
 export const DEFAULT_REDMINE_URL = 'https://redmine.anybim.vn';
-export const DEFAULT_REDMINE_KEY = '440da87a37415860ff240080d18ba34b21536eb8';
+export const DEFAULT_REDMINE_KEY = '';
 
 const STORAGE_KEY_GEMINI_KEY = 'redmine_pm_gemini_api_key';
 const STORAGE_KEY_OPENAI_KEY = 'redmine_pm_openai_api_key';
@@ -231,6 +231,83 @@ export function getStoredAnthropicKey(): string {
   return localStorage.getItem(STORAGE_KEY_ANTHROPIC_KEY) || '';
 }
 
+
+const STORAGE_KEY_AUTH_TOKEN = 'redmine_pm_auth_token';
+
+function safeGetStorage(type: 'local' | 'session'): Storage | null {
+  try {
+    if (typeof globalThis === 'undefined') return null;
+    if (type === 'local') return globalThis.localStorage || null;
+    if (type === 'session') return globalThis.sessionStorage || null;
+  } catch { return null; }
+  return null;
+}
+
+export function getAuthToken(): string {
+  try {
+    const local = safeGetStorage('local');
+    const session = safeGetStorage('session');
+    return local?.getItem(STORAGE_KEY_AUTH_TOKEN) || session?.getItem(STORAGE_KEY_AUTH_TOKEN) || '';
+  } catch { return ''; }
+}
+
+export function setAuthToken(token: string, remember = true): void {
+  try {
+    const storage = safeGetStorage(remember ? 'local' : 'session');
+    storage?.setItem(STORAGE_KEY_AUTH_TOKEN, token);
+  } catch {}
+}
+
+export function clearAuthToken(): void {
+  try {
+    safeGetStorage('local')?.removeItem(STORAGE_KEY_AUTH_TOKEN);
+    safeGetStorage('session')?.removeItem(STORAGE_KEY_AUTH_TOKEN);
+  } catch {}
+}
+
+export async function checkAuthStatus(): Promise<boolean> {
+  const token = getAuthToken();
+  if (!token) return false;
+  try {
+    const res = await fetch('/api/auth/check', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'x-app-token': token,
+      },
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return !!data.authenticated;
+  } catch {
+    return false;
+  }
+}
+
+export async function loginWithPassword(password: string, remember = true): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      return { ok: false, error: data.error || 'Mật khẩu không chính xác' };
+    }
+    setAuthToken(data.token, remember);
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Không thể kết nối đến máy chủ' };
+  }
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch {}
+  clearAuthToken();
+}
+
 export function saveStoredAnthropicKey(key: string): void {
   localStorage.setItem(STORAGE_KEY_ANTHROPIC_KEY, key);
 }
@@ -240,11 +317,18 @@ function getHeaders(): HeadersInit {
   const geminiKey = getStoredGeminiKey();
   const openAIKey = getStoredOpenAIKey();
   const anthropicKey = getStoredAnthropicKey();
+  const token = getAuthToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-redmine-url': cfg.baseUrl,
-    'x-redmine-api-key': cfg.apiKey,
   };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+    headers['x-app-token'] = token;
+  }
+  if (cfg.apiKey) {
+    headers['x-redmine-api-key'] = cfg.apiKey;
+  }
   if (geminiKey) {
     headers['x-gemini-api-key'] = geminiKey;
   }

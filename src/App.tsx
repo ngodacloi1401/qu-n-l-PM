@@ -30,6 +30,8 @@ import {
 } from './types/redmine';
 import { Header } from './components/Header';
 import { FilterBar, FilterState } from './components/FilterBar';
+import { AuthGate } from './components/AuthGate';
+import { checkAuthStatus, logout } from './services/redmineApi';
 import { KanbanBoard } from './components/KanbanBoard';
 import { TableView } from './components/TableView';
 import { DashboardAnalytics } from './components/DashboardAnalytics';
@@ -61,6 +63,20 @@ export default function App() {
   const [activeView, setActiveView] = useState<ViewMode>('kanban');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    checkAuthStatus().then((authed) => {
+      setIsAuthenticated(authed);
+    });
+  }, []);
+
+  const handleLogout = async () => {
+    await logout();
+    setIsAuthenticated(false);
+    setIssues([]);
+    setProjects([]);
+  };
 
   // Modals
   const [selectedIssueForModal, setSelectedIssueForModal] = useState<RedmineIssue | null>(null);
@@ -132,8 +148,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadInitialData();
-  }, [loadInitialData]);
+    if (isAuthenticated) {
+      loadInitialData();
+    }
+  }, [isAuthenticated, loadInitialData]);
 
   // Load project-specific data (issues, members, versions, categories, time entries)
   const loadProjectData = useCallback(
@@ -211,11 +229,12 @@ export default function App() {
 
   // Trigger server fetch ONLY when project or server-side date/limit filters change
   useEffect(() => {
-    if (selectedProjectId) {
+    if (isAuthenticated && selectedProjectId) {
       loadProjectData(selectedProjectId, filters);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    isAuthenticated,
     selectedProjectId,
   ]);
 
@@ -319,6 +338,21 @@ export default function App() {
 
   const selectedProject = projects.find((p) => String(p.id) === selectedProjectId);
 
+  if (isAuthenticated === false) {
+    return <AuthGate onAuthenticated={() => setIsAuthenticated(true)} />;
+  }
+
+  if (isAuthenticated === null) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 selection:bg-indigo-500 selection:text-white">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
+          <p className="text-xs text-slate-400 font-medium tracking-wide">Đang kiểm tra bảo mật...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-indigo-500 selection:text-white">
       {/* Top App Header */}
@@ -333,6 +367,7 @@ export default function App() {
         isLoading={isLoading}
         onOpenCreate={() => setShowCreateModal(true)}
         onOpenSettings={() => setShowSettingsModal(true)}
+        onLock={handleLogout}
         baseUrl={config.baseUrl}
       />
 

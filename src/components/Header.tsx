@@ -10,6 +10,7 @@ import {
   Settings,
   ExternalLink,
   Building2,
+  Lock,
 } from 'lucide-react';
 import { RedmineProject, RedmineUser, ViewMode } from '../types/redmine';
 
@@ -24,6 +25,7 @@ interface HeaderProps {
   isLoading: boolean;
   onOpenCreate: () => void;
   onOpenSettings: () => void;
+  onLock?: () => void;
   baseUrl: string;
 }
 
@@ -38,6 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   isLoading,
   onOpenCreate,
   onOpenSettings,
+  onLock,
   baseUrl,
 }) => {
   const selectedProject = projects.find((p) => String(p.id) === selectedProjectId);
@@ -122,6 +125,18 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Settings className="w-4 h-4" />
             </button>
+
+            {/* Lock App Button */}
+            {onLock && (
+              <button
+                id="btn-lock"
+                onClick={onLock}
+                title="Khóa ứng dụng / Đăng xuất"
+                className="p-2 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+              >
+                <Lock className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Redmine Web Link */}
             {selectedProject ? (

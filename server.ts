@@ -6,6 +6,7 @@ import { geminiErrorResponse } from './lib/geminiErrors.js';
 import { createChatRequest } from './lib/geminiChat.js';
 import { listGeminiTextModels } from './lib/geminiModels.js';
 import { registerProviderAIRoutes } from './lib/aiRoutes.js';
+import { registerAuthRoutes, requireAuth } from './lib/auth.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -97,6 +98,14 @@ async function fetchRedmine(
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Authentication routes
+registerAuthRoutes(app);
+
+// Enforce authentication for sensitive APIs
+app.use('/api/redmine', requireAuth);
+app.use('/api/gemini', requireAuth);
+app.use('/api/ai', requireAuth);
 
 // Current user profile
 app.get('/api/redmine/me', async (req: Request, res: Response) => {
