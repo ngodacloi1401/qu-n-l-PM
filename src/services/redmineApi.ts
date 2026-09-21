@@ -396,7 +396,8 @@ export interface FetchProgress {
 async function fetchIssuesFromServer(
   params: IssueFilterParams = {},
   onProgress?: (progress: FetchProgress) => void,
-  maxTotal: number = 3500
+  maxTotal: number = 3500,
+  onBatch?: (issues: RedmineIssue[], total: number) => void
 ): Promise<{ issues: RedmineIssue[]; total_count: number }> {
   const firstPage = await getIssues({ ...params, limit: 100, offset: 0 });
   const total = firstPage.total_count;
@@ -407,6 +408,7 @@ async function fetchIssuesFromServer(
     total,
     isFinished: allIssues.length >= total || allIssues.length >= maxTotal,
   });
+  onBatch?.(allIssues, total);
 
   if (total <= 100 || allIssues.length >= maxTotal) {
     return { issues: allIssues.slice(0, maxTotal), total_count: total };
@@ -418,8 +420,8 @@ async function fetchIssuesFromServer(
     remainingOffsets.push(offset);
   }
 
-  // Fetch in batches of 4
-  const batchSize = 4;
+  // Fetch in batches of 6
+  const batchSize = 6;
   for (let i = 0; i < remainingOffsets.length; i += batchSize) {
     const batch = remainingOffsets.slice(i, i + batchSize);
     const results = await Promise.all(
@@ -433,6 +435,7 @@ async function fetchIssuesFromServer(
       total,
       isFinished: allIssues.length >= targetCount,
     });
+    onBatch?.(allIssues.slice(0, targetCount), total);
   }
 
   return { issues: allIssues.slice(0, maxTotal), total_count: total };
@@ -611,7 +614,7 @@ export async function fetchAllIssues(params: IssueFilterParams = {}, onProgress?
   const previous = await readLocalCache<IssueSnapshot>(key);
   const incremental = Object.keys(params).every(k => ['project_id', 'status_id'].includes(k)) && params.status_id === '*';
   const snapshot = await loadIssueSnapshot(key, cacheRevision(), maxTotal, incremental,
-    () => fetchIssuesFromServer(params, onProgress, previous?.complete ? Number.MAX_SAFE_INTEGER : maxTotal),
+    () => fetchIssuesFromServer(params, onProgress, previous?.complete ? Number.MAX_SAFE_INTEGER : maxTotal, options.onBatch),
     since => fetchIssuesFromServer({ ...params, updated_on: `>=${since}` }, undefined, Number.MAX_SAFE_INTEGER),
     async () => (await getIssues({ ...params, limit: 1 })).total_count, options);
   onProgress?.({ loaded: Math.min(snapshot.issues.length, maxTotal), total: snapshot.total_count, isFinished: true });

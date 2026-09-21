@@ -90,6 +90,7 @@ export default function App() {
 
   const config = getStoredConfig();
   const fetchRequestIdRef = useRef<number>(0);
+  const lastLoadedProjectIdRef = useRef<string | null>(null);
 
   // Initial load of global Redmine metadata
   const loadInitialData = useCallback(async () => {
@@ -137,13 +138,17 @@ export default function App() {
   // Load project-specific data (issues, members, versions, categories, time entries)
   const loadProjectData = useCallback(
     async (projId: string, currentFilters: FilterState, force = false) => {
+      const isSwitchingProject = lastLoadedProjectIdRef.current !== projId;
+      lastLoadedProjectIdRef.current = projId;
       const currentRequestId = ++fetchRequestIdRef.current;
       setIsLoading(true);
       setError(null);
       setFetchProgress(null);
-      setSnapshotAt(0);
-      setIssues([]);
-      setTotalAvailableCount(0);
+      if (isSwitchingProject) {
+        setSnapshotAt(0);
+        setIssues([]);
+        setTotalAvailableCount(0);
+      }
 
       try {
         const maxTotalNum = Number.MAX_SAFE_INTEGER;
@@ -160,13 +165,22 @@ export default function App() {
               }
             },
             maxTotalNum,
-            { force, onCached: snapshot => {
-              if (fetchRequestIdRef.current === currentRequestId) {
-                setIssues(snapshot.issues.slice(0, maxTotalNum));
-                setTotalAvailableCount(snapshot.total_count);
-                setSnapshotAt(snapshot.fetchedAt);
-              }
-            } }
+            {
+              force,
+              onCached: snapshot => {
+                if (fetchRequestIdRef.current === currentRequestId) {
+                  setIssues(snapshot.issues.slice(0, maxTotalNum));
+                  setTotalAvailableCount(snapshot.total_count);
+                  setSnapshotAt(snapshot.fetchedAt);
+                }
+              },
+              onBatch: (batchIssues, total) => {
+                if (fetchRequestIdRef.current === currentRequestId) {
+                  setIssues(batchIssues.slice(0, maxTotalNum));
+                  setTotalAvailableCount(total);
+                }
+              },
+            }
           ),
           getMemberships(projId).catch(() => []),
           getVersions(projId).catch(() => []),

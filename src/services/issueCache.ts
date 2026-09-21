@@ -2,7 +2,7 @@ import { readLocalCache, writeLocalCache } from './localCache';
 import type { RedmineIssue } from '../types/redmine';
 
 export interface IssueSnapshot { issues: RedmineIssue[]; total_count: number; complete: boolean; fetchedAt: number; syncStartedAt: string; revision: string }
-export interface IssueCacheOptions { force?: boolean; onCached?: (snapshot: IssueSnapshot) => void }
+export interface IssueCacheOptions { force?: boolean; onCached?: (snapshot: IssueSnapshot) => void; onBatch?: (issues: RedmineIssue[], total: number) => void }
 export const CACHE_FRESH_MS = 60000;
 const pending = new Map<string, Promise<IssueSnapshot>>();
 export function issueQueryKey(params: Record<string, any>) {
@@ -14,9 +14,11 @@ export async function loadIssueSnapshot(key: string, revision: string, maxTotal:
   delta: (since: string) => Promise<{ issues: RedmineIssue[]; total_count: number }>,
   count: () => Promise<number>, options: IssueCacheOptions = {}): Promise<IssueSnapshot> {
   const cached = await readLocalCache<IssueSnapshot>(key);
+  if (cached && cached.issues.length > 0) {
+    options.onCached?.(cached);
+  }
   const sufficient = cached && (cached.complete || cached.issues.length >= maxTotal);
   if (sufficient) {
-    options.onCached?.(cached);
     if (!options.force && cached.revision === revision && Date.now() - cached.fetchedAt < CACHE_FRESH_MS) return cached;
   }
   const requestKey = `${key}:${maxTotal}:${revision}`;

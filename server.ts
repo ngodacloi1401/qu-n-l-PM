@@ -128,7 +128,6 @@ app.get('/api/redmine/issues', async (req: Request, res: Response) => {
       limit: '100',
       offset: '0',
       sort: 'updated_on:desc',
-      include: 'attachments,relations',
       ...req.query,
     };
 
