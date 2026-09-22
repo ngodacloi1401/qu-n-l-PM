@@ -11,7 +11,6 @@ import {
   Calendar,
   CalendarRange,
   Clock,
-  DownloadCloud,
   RefreshCw,
   CheckCircle2,
   ChevronDown,
@@ -57,7 +56,6 @@ interface FilterBarProps {
   totalAvailable: number;
   isLoading: boolean;
   fetchProgress: FetchProgress | null;
-  onFetchAll: () => void;
   onRefresh: () => void;
 }
 
@@ -74,7 +72,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   totalAvailable,
   isLoading,
   fetchProgress,
-  onFetchAll,
   onRefresh,
 }) => {
   const [showCustomDateModal, setShowCustomDateModal] = useState(false);
@@ -198,28 +195,16 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-indigo-600' : ''}`} />
           </button>
 
-          {/* Data Count & Fetch All Action */}
+          {/* Progressive data count */}
           <div className="flex items-center gap-2 pl-2 border-l border-slate-200 text-xs">
             <span className="font-semibold text-slate-700">
               {totalLoaded}
               {totalAvailable > totalLoaded ? (
-                <span className="text-slate-400 font-normal"> / {totalAvailable} việc</span>
+                <span className="text-slate-400 font-normal"> / {totalAvailable} việc · tải nền</span>
               ) : (
                 <span className="text-slate-400 font-normal"> việc</span>
               )}
             </span>
-
-            {totalAvailable > totalLoaded && (
-              <button
-                id="fetch-all-issues-btn"
-                onClick={onFetchAll}
-                disabled={isLoading}
-                className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-semibold text-[11px] transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
-              >
-                <DownloadCloud className="w-3 h-3" />
-                <span>Tải hết ({totalAvailable})</span>
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -230,7 +215,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <div className="flex items-center gap-2">
             <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
             <span>
-              Đang tải toàn bộ dữ liệu Redmine: <strong>{fetchProgress.loaded}</strong> / {fetchProgress.total} công việc...
+              Đã hiển thị dữ liệu hiện có; đang đồng bộ nền: <strong>{fetchProgress.loaded}</strong> / {fetchProgress.total} công việc
             </span>
           </div>
           <div className="w-32 bg-indigo-200 rounded-full h-2 overflow-hidden">

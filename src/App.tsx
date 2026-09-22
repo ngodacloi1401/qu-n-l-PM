@@ -13,7 +13,9 @@ import {
   updateIssue,
   getStoredConfig,
   getDateFilterQuery,
+  getIssueDetail,
   FetchProgress,
+  IssueFilterParams,
 } from './services/redmineApi';
 import {
   RedmineUser,
@@ -41,7 +43,7 @@ import { AICopilotView } from './components/AICopilotView';
 import { IssueDetailModal } from './components/IssueDetailModal';
 import { CreateIssueModal } from './components/CreateIssueModal';
 import { SettingsModal } from './components/SettingsModal';
-import { AlertCircle, RefreshCw, Layers } from 'lucide-react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 import { isIssueClosed, vietnamToday } from './services/pmAnalytics';
 
 export default function App() {
@@ -51,6 +53,9 @@ export default function App() {
   const [issues, setIssues] = useState<RedmineIssue[]>([]);
   const [totalAvailableCount, setTotalAvailableCount] = useState<number>(0);
   const [fetchProgress, setFetchProgress] = useState<FetchProgress | null>(null);
+  const [priorityIssues, setPriorityIssues] = useState<RedmineIssue[]>([]);
+  const [filterProgress, setFilterProgress] = useState<FetchProgress | null>(null);
+  const [isFilterLoading, setIsFilterLoading] = useState(false);
   const [statuses, setStatuses] = useState<RedmineStatus[]>([]);
   const [trackers, setTrackers] = useState<RedmineTracker[]>([]);
   const [priorities, setPriorities] = useState<RedminePriority[]>([]);
@@ -62,6 +67,7 @@ export default function App() {
 
   const [activeView, setActiveView] = useState<ViewMode>('kanban');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
@@ -106,6 +112,7 @@ export default function App() {
 
   const config = getStoredConfig();
   const fetchRequestIdRef = useRef<number>(0);
+  const filterRequestIdRef = useRef<number>(0);
   const lastLoadedProjectIdRef = useRef<string | null>(null);
 
   // Initial load of global Redmine metadata
@@ -159,14 +166,20 @@ export default function App() {
       const isSwitchingProject = lastLoadedProjectIdRef.current !== projId;
       lastLoadedProjectIdRef.current = projId;
       const currentRequestId = ++fetchRequestIdRef.current;
-      setIsLoading(true);
+      const isCurrent = () => fetchRequestIdRef.current === currentRequestId;
+      let hasData = false;
       setError(null);
       setFetchProgress(null);
       if (isSwitchingProject) {
         setSnapshotAt(0);
         setIssues([]);
         setTotalAvailableCount(0);
+        setPriorityIssues([]);
+        setFilterProgress(null);
+        hasData = false;
+        setIsLoading(true);
       }
+      setIsSyncing(true);
 
       try {
         const maxTotalNum = Number.MAX_SAFE_INTEGER;
@@ -178,7 +191,7 @@ export default function App() {
               status_id: '*',
             },
             (prog: FetchProgress) => {
-              if (fetchRequestIdRef.current === currentRequestId) {
+              if (isCurrent()) {
                 setFetchProgress(prog);
               }
             },
@@ -186,16 +199,25 @@ export default function App() {
             {
               force,
               onCached: snapshot => {
-                if (fetchRequestIdRef.current === currentRequestId) {
+                if (isCurrent()) {
                   setIssues(snapshot.issues.slice(0, maxTotalNum));
                   setTotalAvailableCount(snapshot.total_count);
                   setSnapshotAt(snapshot.fetchedAt);
+                  // Cache hit -> show data immediately
+                  hasData = true;
+                  setIsLoading(false);
                 }
               },
               onBatch: (batchIssues, total) => {
-                if (fetchRequestIdRef.current === currentRequestId) {
+                if (isCurrent()) {
                   setIssues(batchIssues.slice(0, maxTotalNum));
                   setTotalAvailableCount(total);
+                  setSnapshotAt(previous => previous || Date.now());
+                  // First batch arrived -> stop blocking the UI
+                  if (!hasData && batchIssues.length > 0) {
+                    hasData = true;
+                    setIsLoading(false);
+                  }
                 }
               },
             }
@@ -205,7 +227,7 @@ export default function App() {
           getIssueCategories(projId).catch(() => []),
         ]);
 
-        if (fetchRequestIdRef.current === currentRequestId) {
+        if (isCurrent()) {
           setIssues(issuesRes.issues);
           setTotalAvailableCount(issuesRes.total_count);
           setSnapshotAt(issuesRes.fetchedAt);
@@ -214,12 +236,13 @@ export default function App() {
           setCategories(cats);
         }
       } catch (err: any) {
-        if (fetchRequestIdRef.current === currentRequestId) {
+        if (isCurrent()) {
           setError(err.message || 'Lỗi khi tải dữ liệu công việc từ Redmine');
         }
       } finally {
-        if (fetchRequestIdRef.current === currentRequestId) {
+        if (isCurrent()) {
           setIsLoading(false);
+          setIsSyncing(false);
           setFetchProgress(null);
         }
       }
@@ -237,6 +260,66 @@ export default function App() {
     isAuthenticated,
     selectedProjectId,
   ]);
+
+  const hasActiveFilters = useMemo(() => Boolean(
+    filters.search.trim() || filters.trackerId !== 'all' || filters.statusId !== 'all'
+    || filters.priorityId !== 'all' || filters.assigneeId !== 'all' || filters.versionId !== 'all'
+    || filters.onlyOverdue || filters.onlyMyTasks || filters.timePeriod !== 'all'
+  ), [filters]);
+
+  const prioritizedFilterParams = useMemo<IssueFilterParams>(() => {
+    const params: IssueFilterParams = {
+      project_id: selectedProjectId === 'all' ? undefined : selectedProjectId,
+      status_id: filters.statusId === 'all' ? '*' : filters.statusId,
+    };
+    if (filters.trackerId !== 'all') params.tracker_id = filters.trackerId;
+    if (filters.priorityId !== 'all') params.priority_id = filters.priorityId;
+    if (filters.versionId !== 'all') params.fixed_version_id = filters.versionId;
+    if (filters.onlyMyTasks && currentUser) params.assigned_to_id = currentUser.id;
+    else if (filters.assigneeId === 'unassigned') params.assigned_to_id = '!*';
+    else if (filters.assigneeId !== 'all') params.assigned_to_id = filters.assigneeId;
+    if (filters.onlyOverdue) {
+      const yesterday = new Date(`${vietnamToday()}T00:00:00+07:00`);
+      yesterday.setDate(yesterday.getDate() - 1);
+      params.due_date = `<=${new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(yesterday)}`;
+      if (filters.statusId === 'all') params.status_id = 'open';
+    }
+    Object.assign(params, getDateFilterQuery(filters.timePeriod, filters.dateField, {
+      specificMonth: filters.specificMonth, customStart: filters.customStart, customEnd: filters.customEnd,
+    }));
+    const search = filters.search.trim();
+    if (search && !/^#?\d+$/.test(search)) params.subject = `~${search.slice(0, 120)}`;
+    return params;
+  }, [selectedProjectId, filters, currentUser]);
+
+  // While the complete project keeps syncing, prioritize the current filter in
+  // a separate request. Results are merged into the visible dataset immediately.
+  useEffect(() => {
+    const incomplete = isSyncing || (totalAvailableCount > 0 && issues.length < totalAvailableCount);
+    const requestId = ++filterRequestIdRef.current;
+    if (!isAuthenticated || !selectedProjectId || !hasActiveFilters || !incomplete) {
+      setPriorityIssues([]); setFilterProgress(null); setIsFilterLoading(false); return;
+    }
+    const timer = window.setTimeout(() => {
+      const isCurrent = () => filterRequestIdRef.current === requestId;
+      setPriorityIssues([]); setFilterProgress(null); setIsFilterLoading(true);
+      const search = filters.search.trim();
+      const exactId = search.match(/^#?(\d+)$/)?.[1];
+      const request = exactId
+        ? getIssueDetail(Number(exactId)).then(issue => {
+            const matchesProject = selectedProjectId === 'all' || String(issue.project?.id) === selectedProjectId;
+            return { issues: matchesProject ? [issue] : [], total_count: matchesProject ? 1 : 0, fetchedAt: Date.now() };
+          })
+        : fetchAllIssues(prioritizedFilterParams, progress => { if (isCurrent()) setFilterProgress(progress); }, Number.MAX_SAFE_INTEGER, {
+            onCached: snapshot => { if (isCurrent()) setPriorityIssues(snapshot.issues); },
+            onBatch: batch => { if (isCurrent()) setPriorityIssues(batch); },
+          });
+      request.then(result => { if (isCurrent()) setPriorityIssues(result.issues); })
+        .catch(() => { /* The full background sync continues if Redmine rejects a filter. */ })
+        .finally(() => { if (isCurrent()) { setIsFilterLoading(false); setFilterProgress(null); } });
+    }, filters.search.trim() ? 350 : 80);
+    return () => window.clearTimeout(timer);
+  }, [isAuthenticated, selectedProjectId, hasActiveFilters, prioritizedFilterParams, filters.search, isSyncing]);
 
   // Handle quick status change on Kanban or Table
   const handleQuickStatusChange = async (issueId: number, newStatusId: number) => {
@@ -266,12 +349,18 @@ export default function App() {
   };
 
   // Filter issues client-side for ultra-fast, smooth, zero-reload response
+  const visibleIssueSource = useMemo(() => {
+    const merged = new Map(priorityIssues.map(issue => [issue.id, issue]));
+    issues.forEach(issue => merged.set(issue.id, issue));
+    return [...merged.values()];
+  }, [issues, priorityIssues]);
+
   const filteredIssues = useMemo(() => {
     const today = vietnamToday();
     const dateQuery = getDateFilterQuery(filters.timePeriod, filters.dateField, { specificMonth: filters.specificMonth, customStart: filters.customStart, customEnd: filters.customEnd });
     const expression = dateQuery[filters.dateField];
 
-    return issues.filter((iss) => {
+    return visibleIssueSource.filter((iss) => {
       if (expression) {
         const value = String(iss[filters.dateField] || '').slice(0, 10);
         if (!value) return false;
@@ -334,7 +423,7 @@ export default function App() {
 
       return true;
     });
-  }, [issues, filters, currentUser, statuses]);
+  }, [visibleIssueSource, filters, currentUser, statuses]);
 
   const selectedProject = projects.find((p) => String(p.id) === selectedProjectId);
 
@@ -373,7 +462,8 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
-        {isLoading && <div role="status" className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-sm text-indigo-800"><RefreshCw className="inline w-4 h-4 mr-2 animate-spin" />{fetchProgress ? `Đang tải dữ liệu Redmine: ${fetchProgress.loaded}/${fetchProgress.total} công việc (${Math.round(fetchProgress.loaded / Math.max(fetchProgress.total, 1) * 100)}%)` : 'Đang chuẩn bị và kiểm tra dữ liệu Redmine…'}</div>}
+        {isLoading && (activeView === 'kanban' || activeView === 'list' || activeView === 'analytics') && <div role="status" className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-sm text-indigo-800"><RefreshCw className="inline w-4 h-4 mr-2 animate-spin" />{fetchProgress ? `Đang tải trang dữ liệu đầu tiên: ${fetchProgress.loaded}/${fetchProgress.total} công việc` : 'Đang chuẩn bị và kiểm tra dữ liệu Redmine…'}</div>}
+        {isFilterLoading && (activeView === 'kanban' || activeView === 'list' || activeView === 'analytics') && <div role="status" className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" /><span>Đang ưu tiên tải dữ liệu theo bộ lọc{filterProgress ? `: ${filterProgress.loaded}/${filterProgress.total}` : '…'}; đồng bộ toàn dự án vẫn chạy nền.</span></div>}
         {/* Error notification */}
         {error && (
           <div className="mb-5 p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center justify-between">
@@ -392,7 +482,7 @@ export default function App() {
 
         {/* Filters bar: shown for Kanban, List, and Analytics */}
         {!!snapshotAt && (activeView === 'kanban' || activeView === 'list' || activeView === 'analytics') && <div className="mb-3 flex flex-wrap justify-between gap-2 text-xs text-slate-500">
-          <span>Dữ liệu lưu trên trình duyệt: {issues.length}/{totalAvailableCount} công việc · {new Date(snapshotAt).toLocaleString('vi-VN')}{isLoading ? ' · Đang đồng bộ…' : ''}</span>
+          <span>Dữ liệu lưu trên trình duyệt: {issues.length}/{totalAvailableCount} công việc · {new Date(snapshotAt).toLocaleString('vi-VN')}{isSyncing ? ' · Đang đồng bộ…' : ''}</span>
           <button className="text-indigo-600 underline" onClick={() => {
             const blob = new Blob([JSON.stringify({ schemaVersion: 1, projectId: selectedProjectId, snapshotAt: new Date(snapshotAt).toISOString(), loadedCount: issues.length, totalAvailableCount, issues }, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -414,10 +504,6 @@ export default function App() {
             totalAvailable={totalAvailableCount}
             isLoading={isLoading}
             fetchProgress={fetchProgress}
-            onFetchAll={() => {
-              const updatedFilters: FilterState = { ...filters, fetchLimit: 'all' };
-              setFilters(updatedFilters);
-            }}
             onRefresh={() => loadProjectData(selectedProjectId, filters, true)}
           />
         )}
@@ -472,7 +558,7 @@ export default function App() {
           <AICopilotView
             key={`${selectedProjectId}:${config.baseUrl}:${config.apiKey}`}
             projectId={selectedProjectId}
-            isDataLoading={isLoading}
+            isDataLoading={isLoading || isSyncing}
             totalAvailable={totalAvailableCount}
             statuses={statuses}
             issues={issues}

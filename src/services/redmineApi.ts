@@ -481,7 +481,7 @@ async function fetchIssuesFromServer(
   params: IssueFilterParams = {},
   onProgress?: (progress: FetchProgress) => void,
   maxTotal: number = 3500,
-  onBatch?: (issues: RedmineIssue[], total: number) => void
+  onBatch?: (issues: RedmineIssue[], total: number) => void | Promise<void>
 ): Promise<{ issues: RedmineIssue[]; total_count: number }> {
   const firstPage = await getIssues({ ...params, limit: 100, offset: 0 });
   const total = firstPage.total_count;
@@ -492,7 +492,7 @@ async function fetchIssuesFromServer(
     total,
     isFinished: allIssues.length >= total || allIssues.length >= maxTotal,
   });
-  onBatch?.(allIssues, total);
+  await onBatch?.(allIssues, total);
 
   if (total <= 100 || allIssues.length >= maxTotal) {
     return { issues: allIssues.slice(0, maxTotal), total_count: total };
@@ -504,8 +504,9 @@ async function fetchIssuesFromServer(
     remainingOffsets.push(offset);
   }
 
-  // Fetch in batches of 6
-  const batchSize = 6;
+  // Keep requests concurrent, but publish smaller chunks so the UI remains useful
+  // while a large project continues syncing in the background.
+  const batchSize = 3;
   for (let i = 0; i < remainingOffsets.length; i += batchSize) {
     const batch = remainingOffsets.slice(i, i + batchSize);
     const results = await Promise.all(
@@ -519,7 +520,7 @@ async function fetchIssuesFromServer(
       total,
       isFinished: allIssues.length >= targetCount,
     });
-    onBatch?.(allIssues.slice(0, targetCount), total);
+    await onBatch?.(allIssues.slice(0, targetCount), total);
   }
 
   return { issues: allIssues.slice(0, maxTotal), total_count: total };
@@ -697,8 +698,27 @@ export async function fetchAllIssues(params: IssueFilterParams = {}, onProgress?
   const key = `${await currentCacheScope()}:issues:${issueQueryKey(params)}`;
   const previous = await readLocalCache<IssueSnapshot>(key);
   const incremental = Object.keys(params).every(k => ['project_id', 'status_id'].includes(k)) && params.status_id === '*';
+  const progressiveSyncStartedAt = new Date().toISOString();
+  let lastPersistedCount = 0;
+  const publishBatch = async (batchIssues: RedmineIssue[], total: number) => {
+    await options.onBatch?.(batchIssues, total);
+    const complete = batchIssues.length >= total;
+    const shouldPersist = batchIssues.length <= 100 || complete || batchIssues.length - lastPersistedCount >= 500;
+    // Keep a previous complete snapshot until its replacement is complete.
+    if (shouldPersist && (!previous?.complete || complete)) {
+      lastPersistedCount = batchIssues.length;
+      await writeLocalCache(key, {
+        issues: [...new Map(batchIssues.map(issue => [issue.id, issue])).values()],
+        total_count: total,
+        complete,
+        fetchedAt: Date.now(),
+        syncStartedAt: progressiveSyncStartedAt,
+        revision: cacheRevision(),
+      });
+    }
+  };
   const snapshot = await loadIssueSnapshot(key, cacheRevision(), maxTotal, incremental,
-    () => fetchIssuesFromServer(params, onProgress, previous?.complete ? Number.MAX_SAFE_INTEGER : maxTotal, options.onBatch),
+    () => fetchIssuesFromServer(params, onProgress, previous?.complete ? Number.MAX_SAFE_INTEGER : maxTotal, publishBatch),
     since => fetchIssuesFromServer({ ...params, updated_on: `>=${since}` }, undefined, Number.MAX_SAFE_INTEGER),
     async () => (await getIssues({ ...params, limit: 1 })).total_count, options);
   onProgress?.({ loaded: Math.min(snapshot.issues.length, maxTotal), total: snapshot.total_count, isFinished: true });
