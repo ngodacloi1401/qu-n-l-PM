@@ -10,6 +10,7 @@ import {
   getIssueCategories,
   getMemberships,
   getVersions,
+  getIssues,
   updateIssue,
   getStoredConfig,
   getDateFilterQuery,
@@ -114,6 +115,7 @@ export default function App() {
   const fetchRequestIdRef = useRef<number>(0);
   const filterRequestIdRef = useRef<number>(0);
   const lastLoadedProjectIdRef = useRef<string | null>(null);
+  const needsProjectIssues = activeView === 'kanban' || activeView === 'list' || activeView === 'analytics' || activeView === 'ai';
 
   // Initial load of global Redmine metadata
   const loadInitialData = useCallback(async () => {
@@ -250,15 +252,24 @@ export default function App() {
     []
   );
 
-  // Trigger server fetch ONLY when project or server-side date/limit filters change
+  // Time log and OT own their date-scoped requests. Only issue-based tabs start
+  // the full project sync.
   useEffect(() => {
-    if (isAuthenticated && selectedProjectId) {
+    if (isAuthenticated && selectedProjectId && needsProjectIssues) {
       loadProjectData(selectedProjectId, filters);
+    } else if (!needsProjectIssues) {
+      // Ignore UI updates from an older project request. Its network work can
+      // finish in the background and populate the browser cache.
+      fetchRequestIdRef.current += 1;
+      setIsLoading(false);
+      setIsSyncing(false);
+      setFetchProgress(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isAuthenticated,
     selectedProjectId,
+    needsProjectIssues,
   ]);
 
   const hasActiveFilters = useMemo(() => Boolean(
@@ -292,12 +303,13 @@ export default function App() {
     return params;
   }, [selectedProjectId, filters, currentUser]);
 
-  // While the complete project keeps syncing, prioritize the current filter in
-  // a separate request. Results are merged into the visible dataset immediately.
+  // Load exactly what the active tab needs first. The authoritative project sync
+  // continues separately and fills the browser cache in the background.
   useEffect(() => {
     const incomplete = isSyncing || (totalAvailableCount > 0 && issues.length < totalAvailableCount);
     const requestId = ++filterRequestIdRef.current;
-    if (!isAuthenticated || !selectedProjectId || !hasActiveFilters || !incomplete) {
+    const supportsIssuePreview = activeView === 'kanban' || activeView === 'list' || activeView === 'analytics';
+    if (!isAuthenticated || !selectedProjectId || !supportsIssuePreview || !incomplete) {
       setPriorityIssues([]); setFilterProgress(null); setIsFilterLoading(false); return;
     }
     const timer = window.setTimeout(() => {
@@ -305,21 +317,51 @@ export default function App() {
       setPriorityIssues([]); setFilterProgress(null); setIsFilterLoading(true);
       const search = filters.search.trim();
       const exactId = search.match(/^#?(\d+)$/)?.[1];
-      const request = exactId
-        ? getIssueDetail(Number(exactId)).then(issue => {
-            const matchesProject = selectedProjectId === 'all' || String(issue.project?.id) === selectedProjectId;
-            return { issues: matchesProject ? [issue] : [], total_count: matchesProject ? 1 : 0, fetchedAt: Date.now() };
-          })
-        : fetchAllIssues(prioritizedFilterParams, progress => { if (isCurrent()) setFilterProgress(progress); }, Number.MAX_SAFE_INTEGER, {
-            onCached: snapshot => { if (isCurrent()) setPriorityIssues(snapshot.issues); },
-            onBatch: batch => { if (isCurrent()) setPriorityIssues(batch); },
-          });
+      const request = (async () => {
+        if (exactId) {
+          const issue = await getIssueDetail(Number(exactId));
+          const matchesProject = selectedProjectId === 'all' || String(issue.project?.id) === selectedProjectId;
+          return { issues: matchesProject ? [issue] : [], total_count: matchesProject ? 1 : 0, fetchedAt: Date.now() };
+        }
+
+        if (activeView === 'list') {
+          // The table initially renders 25 rows, so fetch its first sorted page.
+          const preview = await getIssues({ ...prioritizedFilterParams, limit: 25, offset: 0, sort: 'updated_on:desc' });
+          if (isCurrent()) setPriorityIssues(preview.issues);
+          if (!hasActiveFilters) return { ...preview, fetchedAt: Date.now() };
+        } else if (activeView === 'kanban') {
+          // Give every visible status column useful cards instead of taking one
+          // arbitrary 100-row project page that can populate only a few columns.
+          const selectedStatus = prioritizedFilterParams.status_id !== '*'
+            ? [String(prioritizedFilterParams.status_id)]
+            : statuses.map(status => String(status.id));
+          if (selectedStatus.length) {
+            const pages = await Promise.all(selectedStatus.map(statusId => getIssues({
+              ...prioritizedFilterParams,
+              status_id: statusId,
+              limit: 20,
+              offset: 0,
+              sort: 'updated_on:desc',
+            })));
+            const previewIssues = [...new Map(pages.flatMap(page => page.issues).map(issue => [issue.id, issue])).values()];
+            if (isCurrent()) setPriorityIssues(previewIssues);
+            if (!hasActiveFilters) return { issues: previewIssues, total_count: pages.reduce((sum, page) => sum + page.total_count, 0), fetchedAt: Date.now() };
+          }
+        }
+
+        // Analytics needs the complete filtered set. Filtered List/Kanban data
+        // also keeps filling after their first visible rows have appeared.
+        return fetchAllIssues(prioritizedFilterParams, progress => { if (isCurrent()) setFilterProgress(progress); }, Number.MAX_SAFE_INTEGER, {
+          onCached: snapshot => { if (isCurrent()) setPriorityIssues(snapshot.issues); },
+          onBatch: batch => { if (isCurrent()) setPriorityIssues(batch); },
+        });
+      })();
       request.then(result => { if (isCurrent()) setPriorityIssues(result.issues); })
         .catch(() => { /* The full background sync continues if Redmine rejects a filter. */ })
         .finally(() => { if (isCurrent()) { setIsFilterLoading(false); setFilterProgress(null); } });
     }, filters.search.trim() ? 350 : 80);
     return () => window.clearTimeout(timer);
-  }, [isAuthenticated, selectedProjectId, hasActiveFilters, prioritizedFilterParams, filters.search, isSyncing]);
+  }, [isAuthenticated, selectedProjectId, activeView, hasActiveFilters, prioritizedFilterParams, filters.search, isSyncing, statuses]);
 
   // Handle quick status change on Kanban or Table
   const handleQuickStatusChange = async (issueId: number, newStatusId: number) => {
@@ -463,7 +505,7 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
         {isLoading && (activeView === 'kanban' || activeView === 'list' || activeView === 'analytics') && <div role="status" className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-sm text-indigo-800"><RefreshCw className="inline w-4 h-4 mr-2 animate-spin" />{fetchProgress ? `Đang tải trang dữ liệu đầu tiên: ${fetchProgress.loaded}/${fetchProgress.total} công việc` : 'Đang chuẩn bị và kiểm tra dữ liệu Redmine…'}</div>}
-        {isFilterLoading && (activeView === 'kanban' || activeView === 'list' || activeView === 'analytics') && <div role="status" className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" /><span>Đang ưu tiên tải dữ liệu theo bộ lọc{filterProgress ? `: ${filterProgress.loaded}/${filterProgress.total}` : '…'}; đồng bộ toàn dự án vẫn chạy nền.</span></div>}
+        {isFilterLoading && (activeView === 'kanban' || activeView === 'list' || activeView === 'analytics') && <div role="status" className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" /><span>Đang tải dữ liệu cần hiển thị cho {activeView === 'kanban' ? 'Kanban' : activeView === 'list' ? 'Danh sách việc' : 'Báo cáo PM'}{hasActiveFilters ? ' theo bộ lọc đã chọn' : ''}{filterProgress ? `: ${filterProgress.loaded}/${filterProgress.total}` : '…'}; phần còn lại tiếp tục đồng bộ nền.</span></div>}
         {/* Error notification */}
         {error && (
           <div className="mb-5 p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center justify-between">
