@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   FileSpreadsheet,
   Plus,
@@ -140,7 +140,43 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   // Split tasks by source
   const excelTasks = useMemo(() => tasks.filter((t) => t.source === 'excel' || t.source === 'manual'), [tasks]);
   const redmineTasks = useMemo(() => tasks.filter((t) => t.source === 'redmine'), [tasks]);
-  const activeTasks = activeTab === 'excel' ? excelTasks : redmineTasks;
+
+  // Find currently selected project object
+  const currentProjectObj = useMemo(() => {
+    if (!selectedProjectId || selectedProjectId === 'all') return null;
+    return projects.find((p) => String(p.id) === String(selectedProjectId)) || null;
+  }, [selectedProjectId, projects]);
+
+  // Filter tasks by selected project (from top header)
+  const isTaskMatchingProject = useCallback((t: PersonalTask) => {
+    if (!selectedProjectId || selectedProjectId === 'all') return true;
+    // Match by projectId if available
+    if (t.projectId && String(t.projectId) === String(selectedProjectId)) return true;
+    // Match by projectName if available
+    if (currentProjectObj && t.projectName) {
+      if (t.projectName.toLowerCase() === currentProjectObj.name.toLowerCase()) return true;
+    }
+    // Match by category if it equals project name
+    if (currentProjectObj && t.category) {
+      if (t.category.toLowerCase() === currentProjectObj.name.toLowerCase()) return true;
+    }
+    return false;
+  }, [selectedProjectId, currentProjectObj]);
+
+  const scopedExcelTasks = useMemo(() => {
+    if (!selectedProjectId || selectedProjectId === 'all') return excelTasks;
+    // For Excel tasks: if any tasks have project info, filter by it; otherwise keep all
+    const hasAnyProjectInfo = excelTasks.some((t) => t.projectId || t.projectName);
+    if (!hasAnyProjectInfo) return excelTasks;
+    return excelTasks.filter(isTaskMatchingProject);
+  }, [excelTasks, selectedProjectId, isTaskMatchingProject]);
+
+  const scopedRedmineTasks = useMemo(() => {
+    if (!selectedProjectId || selectedProjectId === 'all') return redmineTasks;
+    return redmineTasks.filter(isTaskMatchingProject);
+  }, [redmineTasks, selectedProjectId, isTaskMatchingProject]);
+
+  const activeTasks = activeTab === 'excel' ? scopedExcelTasks : scopedRedmineTasks;
 
   // Dynamic filter options derived from ACTUAL task data (not Redmine API metadata)
   // 1. Weeks: ONLY for Excel tab, only if weeks exist in data
@@ -372,7 +408,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'excel' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'
           }`}>
-            {excelTasks.length}
+            {scopedExcelTasks.length}
           </span>
         </button>
         <button
@@ -388,7 +424,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'redmine' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-500'
           }`}>
-            {redmineTasks.length}
+            {scopedRedmineTasks.length}
           </span>
         </button>
       </div>

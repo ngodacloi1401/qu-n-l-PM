@@ -116,43 +116,115 @@ export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
  * Parse an Excel File (Buffer / ArrayBuffer) using ExcelJS.
  */
 export async function parseExcelWorkbook(fileBuffer: ArrayBuffer): Promise<ExcelParsedSheet[]> {
+  // Strategy: Try SheetJS (xlsx) first as it is battle-tested and handles Google Sheets, WPS, .xls, .xlsx flawlessly
+  try {
+    const XLSX = await import('xlsx');
+    const workbook = XLSX.read(fileBuffer, { type: 'array', cellDates: true });
+
+    if (!workbook || !workbook.SheetNames || workbook.SheetNames.length === 0) {
+      throw new Error('File không chứa sheet nào.');
+    }
+
+    const sheets: ExcelParsedSheet[] = [];
+
+    for (const sheetName of workbook.SheetNames) {
+      const worksheet = workbook.Sheets[sheetName];
+      if (!worksheet) continue;
+
+      // Convert sheet to array of rows (2D array)
+      const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        raw: false,
+        dateNF: 'yyyy-mm-dd',
+        defval: '',
+      });
+
+      if (!rawRows || rawRows.length === 0) continue;
+
+      // Scan first 10 rows to detect the most probable header row
+      let headerRowIndex = 0;
+      let foundHeaders: string[] = [];
+
+      for (let r = 0; r < Math.min(10, rawRows.length); r++) {
+        const row = rawRows[r] || [];
+        const cells = row.map((c: any) => String(c || '').trim());
+        const nonEmptyCount = cells.filter((c: string) => c !== '').length;
+        const rowText = cells.join(' ').toLowerCase();
+
+        if (
+          nonEmptyCount >= 2 &&
+          (rowText.includes('việc') ||
+            rowText.includes('tên') ||
+            rowText.includes('tuần') ||
+            rowText.includes('trạng thái') ||
+            rowText.includes('deadline') ||
+            rowText.includes('task') ||
+            rowText.includes('status') ||
+            rowText.includes('priority') ||
+            rowText.includes('tiêu đề') ||
+            rowText.includes('stt'))
+        ) {
+          headerRowIndex = r;
+          foundHeaders = cells;
+          break;
+        }
+      }
+
+      // If no keyword match, use row 0 as header
+      if (foundHeaders.length === 0) {
+        headerRowIndex = 0;
+        const firstRow = rawRows[0] || [];
+        foundHeaders = firstRow.map((c: any, i: number) => {
+          const s = String(c || '').trim();
+          return s || `Cột ${i + 1}`;
+        });
+      }
+
+      // Trim trailing empty headers
+      while (foundHeaders.length > 0 && !foundHeaders[foundHeaders.length - 1]) {
+        foundHeaders.pop();
+      }
+
+      const rows: (string | number | null)[][] = [];
+      for (let r = headerRowIndex + 1; r < rawRows.length; r++) {
+        const row = rawRows[r] || [];
+        const rowValues: (string | number | null)[] = [];
+        let hasData = false;
+
+        for (let c = 0; c < foundHeaders.length; c++) {
+          const val = row[c];
+          if (val !== null && val !== undefined && String(val).trim() !== '') {
+            hasData = true;
+            rowValues[c] = String(val).trim();
+          } else {
+            rowValues[c] = '';
+          }
+        }
+
+        if (hasData) {
+          rows.push(rowValues);
+        }
+      }
+
+      sheets.push({
+        name: sheetName,
+        headers: foundHeaders,
+        rows,
+        totalRows: rows.length,
+      });
+    }
+
+    if (sheets.length > 0) {
+      return sheets;
+    }
+  } catch (sheetJsErr: any) {
+    console.warn('SheetJS parsing failed, attempting ExcelJS fallback:', sheetJsErr);
+  }
+
+  // Fallback: ExcelJS
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
-
-  // ExcelJS can fail with certain ArrayBuffer sources (Google Sheets, WPS).
-  // Try multiple buffer representations as fallback.
-  let loaded = false;
-  const attempts: Array<{ data: any; label: string }> = [
-    { data: fileBuffer, label: 'ArrayBuffer' },
-    { data: new Uint8Array(fileBuffer), label: 'Uint8Array' },
-  ];
-
-  let lastError: any = null;
-  for (const attempt of attempts) {
-    try {
-      await workbook.xlsx.load(attempt.data as any);
-      loaded = true;
-      break;
-    } catch (err: any) {
-      lastError = err;
-      console.warn(`ExcelJS load failed with ${attempt.label}:`, err?.message || err);
-    }
-  }
-
-  if (!loaded) {
-    const msg = lastError?.message || String(lastError);
-    if (msg.includes('sheets') || msg.includes('undefined') || msg.includes('Cannot read')) {
-      throw new Error(
-        'Không thể đọc file Excel. File có thể ở định dạng không tương thích (.xls cũ, hoặc xuất từ Google Sheets/WPS). ' +
-        'Hãy mở file bằng Microsoft Excel rồi "Save As" lại dạng .xlsx, sau đó thử import lại.'
-      );
-    }
-    throw new Error(`Lỗi khi đọc file Excel: ${msg}`);
-  }
-
-  if (!workbook.worksheets || workbook.worksheets.length === 0) {
-    throw new Error('File Excel không chứa sheet nào hoặc định dạng không hợp lệ. Vui lòng dùng file .xlsx chuẩn.');
-  }
+  await workbook.xlsx.load(fileBuffer);
 
   const sheets: ExcelParsedSheet[] = [];
 
@@ -160,7 +232,6 @@ export async function parseExcelWorkbook(fileBuffer: ArrayBuffer): Promise<Excel
     let headerRowIndex = 1;
     let foundHeaders: string[] = [];
 
-    // Scan first 10 rows to detect the most probable header row
     for (let r = 1; r <= Math.min(10, worksheet.rowCount); r++) {
       const row = worksheet.getRow(r);
       const cells: string[] = [];
