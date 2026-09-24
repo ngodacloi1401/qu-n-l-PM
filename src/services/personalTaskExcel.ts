@@ -118,11 +118,30 @@ export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
 export async function parseExcelWorkbook(fileBuffer: ArrayBuffer): Promise<ExcelParsedSheet[]> {
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
-  try {
-    await workbook.xlsx.load(fileBuffer);
-  } catch (err: any) {
-    const msg = err?.message || String(err);
-    if (msg.includes('sheets') || msg.includes('undefined')) {
+
+  // ExcelJS can fail with certain ArrayBuffer sources (Google Sheets, WPS).
+  // Try multiple buffer representations as fallback.
+  let loaded = false;
+  const attempts: Array<{ data: any; label: string }> = [
+    { data: fileBuffer, label: 'ArrayBuffer' },
+    { data: new Uint8Array(fileBuffer), label: 'Uint8Array' },
+  ];
+
+  let lastError: any = null;
+  for (const attempt of attempts) {
+    try {
+      await workbook.xlsx.load(attempt.data as any);
+      loaded = true;
+      break;
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`ExcelJS load failed with ${attempt.label}:`, err?.message || err);
+    }
+  }
+
+  if (!loaded) {
+    const msg = lastError?.message || String(lastError);
+    if (msg.includes('sheets') || msg.includes('undefined') || msg.includes('Cannot read')) {
       throw new Error(
         'Không thể đọc file Excel. File có thể ở định dạng không tương thích (.xls cũ, hoặc xuất từ Google Sheets/WPS). ' +
         'Hãy mở file bằng Microsoft Excel rồi "Save As" lại dạng .xlsx, sau đó thử import lại.'
