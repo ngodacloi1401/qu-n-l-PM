@@ -269,10 +269,11 @@ export async function checkAuthStatus(): Promise<boolean> {
   const token = getAuthToken();
   if (!token) return false;
   try {
+    const safeToken = toSafeHeaderValue(token);
     const res = await fetch('/api/auth/check', {
       headers: {
-        Authorization: `Bearer ${token}`,
-        'x-app-token': token,
+        Authorization: `Bearer ${safeToken}`,
+        'x-app-token': safeToken,
       },
     });
     if (!res.ok) return false;
@@ -312,6 +313,13 @@ export function saveStoredAnthropicKey(key: string): void {
   localStorage.setItem(STORAGE_KEY_ANTHROPIC_KEY, key);
 }
 
+export function toSafeHeaderValue(val?: string | null): string {
+  if (!val || typeof val !== 'string') return '';
+  // Strip characters outside Latin-1 / ByteString (code points > 255) to prevent:
+  // TypeError: Failed to read the 'headers' property from 'RequestInit': String contains non ISO-8859-1 code point.
+  return val.replace(/[^\x00-\xFF]/g, '').trim();
+}
+
 function getHeaders(): HeadersInit {
   const cfg = getStoredConfig();
   const geminiKey = getStoredGeminiKey();
@@ -320,20 +328,23 @@ function getHeaders(): HeadersInit {
   const token = getAuthToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'x-redmine-url': cfg.baseUrl,
   };
+  if (cfg.baseUrl) {
+    headers['x-redmine-url'] = toSafeHeaderValue(cfg.baseUrl);
+  }
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-    headers['x-app-token'] = token;
+    const safeToken = toSafeHeaderValue(token);
+    headers['Authorization'] = `Bearer ${safeToken}`;
+    headers['x-app-token'] = safeToken;
   }
   if (cfg.apiKey) {
-    headers['x-redmine-api-key'] = cfg.apiKey;
+    headers['x-redmine-api-key'] = toSafeHeaderValue(cfg.apiKey);
   }
   if (geminiKey) {
-    headers['x-gemini-api-key'] = geminiKey;
+    headers['x-gemini-api-key'] = toSafeHeaderValue(geminiKey);
   }
-  if (openAIKey) headers['x-openai-api-key'] = openAIKey;
-  if (anthropicKey) headers['x-anthropic-api-key'] = anthropicKey;
+  if (openAIKey) headers['x-openai-api-key'] = toSafeHeaderValue(openAIKey);
+  if (anthropicKey) headers['x-anthropic-api-key'] = toSafeHeaderValue(anthropicKey);
   return headers;
 }
 
