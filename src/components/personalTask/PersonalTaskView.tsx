@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   FileSpreadsheet,
   Plus,
@@ -12,14 +12,29 @@ import {
   Clock,
   AlertCircle,
   CheckCircle2,
-  TrendingUp,
   Flame,
   Layers,
-  Save,
   RotateCcw,
 } from 'lucide-react';
-import type { PersonalTask, TaskStatus, TaskPriority } from '../../types/personalTask';
-import type { RedmineIssue, RedmineUser } from '../../types/redmine';
+import type { PersonalTask } from '../../types/personalTask';
+import type {
+  RedmineIssue,
+  RedmineUser,
+  RedmineStatus,
+  RedmineTracker,
+  RedminePriority,
+  RedmineCustomField,
+  RedmineIssueCategory,
+  RedmineVersion,
+  RedmineMembership,
+  RedmineProject,
+} from '../../types/redmine';
+import {
+  DEFAULT_REDMINE_STATUSES,
+  DEFAULT_REDMINE_PRIORITIES,
+  DEFAULT_REDMINE_TRACKERS,
+  DEFAULT_REDMINE_CUSTOM_FIELDS,
+} from '../../services/redmineApi';
 import { getSavedTasks, saveTasks, INITIAL_SAMPLE_TASKS } from '../../services/personalTaskStorage';
 import { exportPersonalTasksToExcel } from '../../services/personalTaskExcel';
 import { PersonalTaskTable } from './PersonalTaskTable';
@@ -32,12 +47,30 @@ interface PersonalTaskViewProps {
   redmineIssues: RedmineIssue[];
   currentUser: RedmineUser | null;
   baseUrl: string;
+  statuses?: RedmineStatus[];
+  trackers?: RedmineTracker[];
+  priorities?: RedminePriority[];
+  customFields?: RedmineCustomField[];
+  categories?: RedmineIssueCategory[];
+  versions?: RedmineVersion[];
+  memberships?: RedmineMembership[];
+  projects?: RedmineProject[];
+  selectedProjectId?: string;
 }
 
 export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   redmineIssues,
   currentUser,
   baseUrl,
+  statuses = DEFAULT_REDMINE_STATUSES,
+  trackers = DEFAULT_REDMINE_TRACKERS,
+  priorities = DEFAULT_REDMINE_PRIORITIES,
+  customFields = DEFAULT_REDMINE_CUSTOM_FIELDS,
+  categories = [],
+  versions = [],
+  memberships = [],
+  projects = [],
+  selectedProjectId,
 }) => {
   const [tasks, setTasks] = useState<PersonalTask[]>(() => getSavedTasks());
   const [subView, setSubView] = useState<'table' | 'kanban'>('table');
@@ -45,6 +78,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   // Filters
   const [search, setSearch] = useState('');
   const [selectedWeek, setSelectedWeek] = useState('all');
+  const [selectedTracker, setSelectedTracker] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedPriority, setSelectedPriority] = useState('all');
@@ -78,7 +112,6 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
     return Array.from(set);
   }, [tasks]);
 
-  // Set of Redmine IDs already in tasks
   const existingRedmineIds = useMemo(() => {
     const set = new Set<number>();
     tasks.forEach((t) => {
@@ -121,7 +154,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   };
 
   const handleResetSampleData = () => {
-    if (confirm('Khôi phục danh sách dữ liệu mẫu ban đầu?')) {
+    if (confirm('Khôi phục danh sách dữ liệu mẫu chuẩn Redmine ban đầu?')) {
       setTasks(INITIAL_SAMPLE_TASKS);
     }
   };
@@ -129,22 +162,33 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   // KPI Calculations
   const todayStr = new Date().toISOString().split('T')[0];
 
+  const isClosedTask = (t: PersonalTask) => {
+    const s = statuses.find((st) => st.name === t.statusName);
+    if (s) return s.is_closed;
+    const lower = (t.statusName || '').toLowerCase();
+    return lower.includes('closed') || lower.includes('done') || lower.includes('hoàn thành');
+  };
+
   const totalCount = tasks.length;
-  const inProgressCount = tasks.filter((t) => t.status === 'in_progress').length;
-  const doneCount = tasks.filter((t) => t.status === 'done').length;
-  const urgentCount = tasks.filter((t) => t.priority === 'urgent' && t.status !== 'done').length;
-  const overdueCount = tasks.filter((t) => t.dueDate && t.dueDate < todayStr && t.status !== 'done').length;
-  const dueTodayCount = tasks.filter((t) => t.dueDate && t.dueDate === todayStr && t.status !== 'done').length;
+  const inProgressCount = tasks.filter((t) => !isClosedTask(t) && t.statusName?.toLowerCase().includes('in progress')).length;
+  const doneCount = tasks.filter((t) => isClosedTask(t)).length;
+  const urgentCount = tasks.filter((t) => {
+    const p = (t.priorityName || '').toLowerCase();
+    return !isClosedTask(t) && (p.includes('urgent') || p.includes('must have') || p.includes('gấp'));
+  }).length;
+  const overdueCount = tasks.filter((t) => t.dueDate && t.dueDate < todayStr && !isClosedTask(t)).length;
+  const dueTodayCount = tasks.filter((t) => t.dueDate && t.dueDate === todayStr && !isClosedTask(t)).length;
   const donePercent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
 
   // Filtered tasks
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (selectedWeek !== 'all' && t.week !== selectedWeek) return false;
+      if (selectedTracker !== 'all' && t.trackerName !== selectedTracker) return false;
       if (selectedCategory !== 'all' && t.category !== selectedCategory) return false;
-      if (selectedStatus !== 'all' && t.status !== selectedStatus) return false;
-      if (selectedPriority !== 'all' && t.priority !== selectedPriority) return false;
-      if (overdueOnly && (!t.dueDate || t.dueDate >= todayStr || t.status === 'done')) return false;
+      if (selectedStatus !== 'all' && t.statusName !== selectedStatus) return false;
+      if (selectedPriority !== 'all' && t.priorityName !== selectedPriority) return false;
+      if (overdueOnly && (!t.dueDate || t.dueDate >= todayStr || isClosedTask(t))) return false;
 
       if (search) {
         const q = search.toLowerCase();
@@ -153,12 +197,14 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
         const inResult = t.resultNote?.toLowerCase().includes(q);
         const inWeek = t.week?.toLowerCase().includes(q);
         const inCat = t.category?.toLowerCase().includes(q);
-        if (!inTitle && !inDesc && !inResult && !inWeek && !inCat) return false;
+        const inTracker = t.trackerName?.toLowerCase().includes(q);
+        const inParent = String(t.parentTaskId || '').includes(q);
+        if (!inTitle && !inDesc && !inResult && !inWeek && !inCat && !inTracker && !inParent) return false;
       }
 
       return true;
     });
-  }, [tasks, selectedWeek, selectedCategory, selectedStatus, selectedPriority, overdueOnly, search, todayStr]);
+  }, [tasks, selectedWeek, selectedTracker, selectedCategory, selectedStatus, selectedPriority, overdueOnly, search, todayStr, statuses]);
 
   return (
     <div className="space-y-5">
@@ -178,7 +224,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
         {/* In Progress */}
         <div className="bg-white p-3.5 rounded-xl border border-amber-200 bg-amber-50/20 shadow-xs flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider">Đang làm</div>
+            <div className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider">In Progress</div>
             <div className="text-xl font-bold text-amber-900 mt-0.5">{inProgressCount}</div>
           </div>
           <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center text-amber-800">
@@ -189,7 +235,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
         {/* Completed */}
         <div className="bg-white p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-xs flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">Hoàn thành</div>
+            <div className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">Closed / Done</div>
             <div className="text-xl font-bold text-emerald-800 mt-0.5">
               {doneCount} <span className="text-xs font-normal text-emerald-600">({donePercent}%)</span>
             </div>
@@ -202,7 +248,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
         {/* Urgent */}
         <div className="bg-white p-3.5 rounded-xl border border-rose-200 bg-rose-50/20 shadow-xs flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-semibold text-rose-700 uppercase tracking-wider">Việc gấp</div>
+            <div className="text-[11px] font-semibold text-rose-700 uppercase tracking-wider">Must Have / Gấp</div>
             <div className="text-xl font-bold text-rose-800 mt-0.5">{urgentCount}</div>
           </div>
           <div className="w-9 h-9 rounded-lg bg-rose-100 flex items-center justify-center text-rose-800">
@@ -237,7 +283,6 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
       <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-wrap items-center justify-between gap-4">
         {/* Left: View switcher & Search */}
         <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
-          {/* View toggle */}
           <div className="flex items-center bg-slate-100 p-1 rounded-xl">
             <button
               onClick={() => setSubView('table')}
@@ -259,14 +304,13 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
             </button>
           </div>
 
-          {/* Search box */}
           <div className="relative flex-1 min-w-[200px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm theo tên việc, mô tả, ghi chú tiến độ..."
+              placeholder="Tìm theo tiêu đề, tracker, task cha, ghi chú tiến độ..."
               className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-colors"
             />
           </div>
@@ -274,7 +318,6 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
 
         {/* Right: Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Import Excel */}
           <button
             onClick={() => setShowImportModal(true)}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
@@ -283,7 +326,6 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
             <span>Nhập từ Excel</span>
           </button>
 
-          {/* Sync from Redmine */}
           <button
             onClick={() => setShowRedmineSyncModal(true)}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
@@ -292,7 +334,6 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
             <span className="hidden sm:inline">Lấy việc Redmine</span>
           </button>
 
-          {/* Add New Task */}
           <button
             onClick={() => {
               setEditingTask(null);
@@ -304,7 +345,6 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
             <span>Thêm việc</span>
           </button>
 
-          {/* Export Excel */}
           <button
             onClick={handleExportExcel}
             title="Xuất danh sách ra file Excel"
@@ -313,7 +353,6 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
             <Download className="w-4 h-4" />
           </button>
 
-          {/* Reset sample */}
           <button
             onClick={handleResetSampleData}
             title="Khôi phục dữ liệu mẫu ban đầu"
@@ -345,13 +384,27 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           ))}
         </select>
 
+        {/* Tracker filter */}
+        <select
+          value={selectedTracker}
+          onChange={(e) => setSelectedTracker(e.target.value)}
+          className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
+        >
+          <option value="all">Tất cả Tracker</option>
+          {trackers.map((trk) => (
+            <option key={trk.id} value={trk.name}>
+              {trk.name}
+            </option>
+          ))}
+        </select>
+
         {/* Category filter */}
         <select
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value)}
           className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
         >
-          <option value="all">Tất cả nhóm việc</option>
+          <option value="all">Tất cả Category</option>
           {availableCategories.map((c) => (
             <option key={c} value={c}>
               {c}
@@ -359,31 +412,32 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           ))}
         </select>
 
-        {/* Status filter */}
+        {/* Status Redmine filter */}
         <select
           value={selectedStatus}
           onChange={(e) => setSelectedStatus(e.target.value)}
           className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
         >
-          <option value="all">Tất cả trạng thái</option>
-          <option value="todo">Chưa làm</option>
-          <option value="in_progress">Đang làm</option>
-          <option value="review">Chờ review</option>
-          <option value="done">Hoàn thành</option>
-          <option value="deferred">Tạm hoãn</option>
+          <option value="all">Tất cả Status Redmine</option>
+          {statuses.map((st) => (
+            <option key={st.id} value={st.name}>
+              {st.name}
+            </option>
+          ))}
         </select>
 
-        {/* Priority filter */}
+        {/* Priority Redmine filter */}
         <select
           value={selectedPriority}
           onChange={(e) => setSelectedPriority(e.target.value)}
           className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
         >
-          <option value="all">Tất cả ưu tiên</option>
-          <option value="urgent">Gấp</option>
-          <option value="high">Cao</option>
-          <option value="normal">Bình thường</option>
-          <option value="low">Thấp</option>
+          <option value="all">Tất cả Priority Redmine</option>
+          {priorities.map((p) => (
+            <option key={p.id} value={p.name}>
+              {p.name}
+            </option>
+          ))}
         </select>
 
         {/* Overdue checkbox */}
@@ -397,8 +451,8 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           <span className={overdueOnly ? 'text-rose-700 font-bold' : ''}>Chỉ việc quá hạn</span>
         </label>
 
-        {/* Filter reset indicator */}
         {(selectedWeek !== 'all' ||
+          selectedTracker !== 'all' ||
           selectedCategory !== 'all' ||
           selectedStatus !== 'all' ||
           selectedPriority !== 'all' ||
@@ -407,6 +461,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           <button
             onClick={() => {
               setSelectedWeek('all');
+              setSelectedTracker('all');
               setSelectedCategory('all');
               setSelectedStatus('all');
               setSelectedPriority('all');
@@ -424,6 +479,8 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
       {subView === 'table' ? (
         <PersonalTaskTable
           tasks={filteredTasks}
+          statuses={statuses}
+          priorities={priorities}
           onUpdateTask={handleUpdateTask}
           onEditTask={(t) => {
             setEditingTask(t);
@@ -434,6 +491,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
       ) : (
         <PersonalTaskKanban
           tasks={filteredTasks}
+          statuses={statuses}
           onUpdateTask={handleUpdateTask}
           onEditTask={(t) => {
             setEditingTask(t);
@@ -455,6 +513,14 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           task={editingTask}
           existingWeeks={availableWeeks}
           existingCategories={availableCategories}
+          statuses={statuses}
+          priorities={priorities}
+          trackers={trackers}
+          customFields={customFields}
+          categories={categories}
+          versions={versions}
+          memberships={memberships}
+          projects={projects}
           onClose={() => {
             setShowCreateModal(false);
             setEditingTask(null);

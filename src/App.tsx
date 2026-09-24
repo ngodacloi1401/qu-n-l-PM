@@ -557,6 +557,15 @@ export default function App() {
             redmineIssues={issues}
             currentUser={currentUser}
             baseUrl={config.baseUrl}
+            statuses={statuses}
+            trackers={trackers}
+            priorities={priorities}
+            customFields={customFields}
+            categories={categories}
+            versions={versions}
+            memberships={memberships}
+            projects={projects}
+            selectedProjectId={selectedProjectId}
           />
         )}
 
@@ -637,6 +646,7 @@ export default function App() {
           projects={projects}
           defaultProjectId={selectedProjectId}
           trackers={trackers}
+          statuses={statuses}
           priorities={priorities}
           customFields={customFields}
           categories={categories}

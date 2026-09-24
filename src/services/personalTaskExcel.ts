@@ -1,4 +1,4 @@
-import type { PersonalTask, ExcelColumnMapping, ExcelParsedSheet, TaskPriority, TaskStatus } from '../types/personalTask';
+import type { PersonalTask, ExcelColumnMapping, ExcelParsedSheet } from '../types/personalTask';
 
 // Normalize text for flexible column matching
 function normalizeHeader(str: string): string {
@@ -26,6 +26,9 @@ export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
     resultNoteCol: -1,
     dueDateCol: -1,
     delayReasonCol: -1,
+    trackerCol: -1,
+    parentTaskCol: -1,
+    doneRatioCol: -1,
   };
 
   headers.forEach((h, idx) => {
@@ -39,6 +42,11 @@ export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
       (norm.includes('ngaygiao') || norm.includes('ngaybatdau') || norm.includes('startdate') || norm.includes('ngaytao'))
     ) {
       mapping.assignedDateCol = idx;
+    } else if (
+      mapping.trackerCol === -1 &&
+      (norm.includes('tracker') || norm.includes('loaiviec') || norm.includes('loaicongviec'))
+    ) {
+      mapping.trackerCol = idx;
     } else if (
       mapping.categoryCol === -1 &&
       (norm.includes('nhomviec') || norm.includes('nhom') || norm.includes('category') || norm.includes('duan') || norm.includes('project'))
@@ -84,6 +92,16 @@ export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
       (norm.includes('lydo') || norm.includes('trehan') || norm.includes('nguyennhan') || norm.includes('delay'))
     ) {
       mapping.delayReasonCol = idx;
+    } else if (
+      mapping.parentTaskCol === -1 &&
+      (norm.includes('parent') || norm.includes('taskcha') || norm.includes('parenttask'))
+    ) {
+      mapping.parentTaskCol = idx;
+    } else if (
+      mapping.doneRatioCol === -1 &&
+      (norm.includes('done') || norm.includes('phantram') || norm.includes('progress'))
+    ) {
+      mapping.doneRatioCol = idx;
     }
   });
 
@@ -115,7 +133,6 @@ export async function parseExcelWorkbook(fileBuffer: ArrayBuffer): Promise<Excel
         if (val) nonEmptyCount++;
       });
 
-      // If this row has 3+ non-empty cells with text like "tuần", "việc", "trạng thái", "tên", etc.
       const rowText = cells.join(' ').toLowerCase();
       if (
         nonEmptyCount >= 3 &&
@@ -124,7 +141,9 @@ export async function parseExcelWorkbook(fileBuffer: ArrayBuffer): Promise<Excel
           rowText.includes('tuần') ||
           rowText.includes('trạng thái') ||
           rowText.includes('deadline') ||
-          rowText.includes('task'))
+          rowText.includes('task') ||
+          rowText.includes('status') ||
+          rowText.includes('priority'))
       ) {
         headerRowIndex = r;
         foundHeaders = cells;
@@ -132,7 +151,6 @@ export async function parseExcelWorkbook(fileBuffer: ArrayBuffer): Promise<Excel
       }
     }
 
-    // Fallback if not detected: use row 1
     if (foundHeaders.length === 0 && worksheet.rowCount > 0) {
       headerRowIndex = 1;
       const row = worksheet.getRow(1);
@@ -141,12 +159,10 @@ export async function parseExcelWorkbook(fileBuffer: ArrayBuffer): Promise<Excel
       });
     }
 
-    // Trim trailing empty headers
     while (foundHeaders.length > 0 && !foundHeaders[foundHeaders.length - 1]) {
       foundHeaders.pop();
     }
 
-    // Read remaining rows as data
     const rows: (string | number | null)[][] = [];
     for (let r = headerRowIndex + 1; r <= worksheet.rowCount; r++) {
       const row = worksheet.getRow(r);
@@ -191,21 +207,31 @@ export async function parseExcelWorkbook(fileBuffer: ArrayBuffer): Promise<Excel
   return sheets;
 }
 
-function parsePriority(val: any): TaskPriority {
-  const str = String(val || '').toLowerCase();
-  if (str.includes('gấp') || str.includes('urgent') || str.includes('khẩn') || str.includes('p1')) return 'urgent';
-  if (str.includes('cao') || str.includes('high') || str.includes('p2')) return 'high';
-  if (str.includes('thấp') || str.includes('low') || str.includes('p4')) return 'low';
-  return 'normal';
+// Map Excel priority text to Redmine Priority Name
+function parseRedminePriority(val: any): string {
+  const str = String(val || '').toLowerCase().trim();
+  if (str.includes('urgent') || str.includes('gấp') || str.includes('khẩn') || str.includes('p1') || str.includes('immediate')) return 'Urgent';
+  if (str.includes('must have') || str.includes('must')) return 'Must Have';
+  if (str.includes('should have') || str.includes('should')) return 'Should Have';
+  if (str.includes('could have') || str.includes('could')) return 'Could Have';
+  if (str.includes('won\'t have') || str.includes('wont have')) return "Won't Have";
+  if (str.includes('cao') || str.includes('high') || str.includes('p2')) return 'High';
+  if (str.includes('thấp') || str.includes('low') || str.includes('p4')) return 'Low';
+  return 'Normal';
 }
 
-function parseStatus(val: any): TaskStatus {
-  const str = String(val || '').toLowerCase();
-  if (str.includes('hoàn thành') || str.includes('done') || str.includes('đã xong') || str.includes('closed')) return 'done';
-  if (str.includes('đang làm') || str.includes('doing') || str.includes('in progress') || str.includes('tiến hành')) return 'in_progress';
-  if (str.includes('review') || str.includes('chờ duyệt') || str.includes('chờ review') || str.includes('kiểm tra')) return 'review';
-  if (str.includes('hoãn') || str.includes('tạm hoãn') || str.includes('defer') || str.includes('pause')) return 'deferred';
-  return 'todo';
+// Map Excel status text to Redmine Status Name
+function parseRedmineStatus(val: any): string {
+  const str = String(val || '').toLowerCase().trim();
+  if (str.includes('closed') || str.includes('đóng') || str.includes('hoàn thành') || str.includes('done') || str.includes('xong')) return 'Closed';
+  if (str.includes('resolved') || str.includes('đã giải quyết')) return 'Resolved';
+  if (str.includes('qa testing') || str.includes('testing') || str.includes('test')) return 'QA testing';
+  if (str.includes('qa verified') || str.includes('verified')) return 'QA Verified';
+  if (str.includes('ready for qa') || str.includes('ready')) return 'Ready For QA';
+  if (str.includes('feedback') || str.includes('phản hồi') || str.includes('review') || str.includes('chờ review')) return 'Feedback';
+  if (str.includes('in progress') || str.includes('đang làm') || str.includes('doing') || str.includes('tiến hành')) return 'In Progress';
+  if (str.includes('pending') || str.includes('tạm hoãn') || str.includes('hoãn')) return 'Pending';
+  return 'New';
 }
 
 function formatDateString(val: any): string {
@@ -214,7 +240,6 @@ function formatDateString(val: any): string {
     return val.toISOString().split('T')[0];
   }
   const s = String(val).trim();
-  // Check if dd/mm/yyyy
   const dmyMatch = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
   if (dmyMatch) {
     const [, d, m, y] = dmyMatch;
@@ -224,7 +249,7 @@ function formatDateString(val: any): string {
 }
 
 /**
- * Convert sheet rows into PersonalTask[] using the given column mapping.
+ * Convert sheet rows into PersonalTask[] with Redmine-aligned schema.
  */
 export function convertRowsToTasks(
   rows: (string | number | null)[][],
@@ -235,35 +260,42 @@ export function convertRowsToTasks(
 
   return rows
     .map((row, idx) => {
-      const getVal = (col: number) => (col >= 0 && col < row.length ? String(row[col] ?? '').trim() : '');
+      const getVal = (col?: number) => (col !== undefined && col >= 0 && col < row.length ? String(row[col] ?? '').trim() : '');
 
       const title = getVal(mapping.titleCol);
-      if (!title) return null; // Ignore rows without title
+      if (!title) return null;
 
       const week = getVal(mapping.weekCol) || defaultWeek || 'Kế hoạch tuần';
       const assignedDate = formatDateString(getVal(mapping.assignedDateCol));
+      const trackerName = getVal(mapping.trackerCol) || 'Task';
       const category = getVal(mapping.categoryCol) || 'Chung';
       const description = getVal(mapping.descriptionCol);
-      const priority = parsePriority(getVal(mapping.priorityCol));
+      const priorityName = parseRedminePriority(getVal(mapping.priorityCol));
       const estimatedHours = getVal(mapping.estimatedHoursCol);
-      const status = parseStatus(getVal(mapping.statusCol));
+      const statusName = parseRedmineStatus(getVal(mapping.statusCol));
       const resultNote = getVal(mapping.resultNoteCol);
       const dueDate = formatDateString(getVal(mapping.dueDateCol));
       const delayReason = getVal(mapping.delayReasonCol);
+      const parentTaskId = getVal(mapping.parentTaskCol);
+      const doneRatioVal = getVal(mapping.doneRatioCol);
+      const doneRatio = doneRatioVal ? parseInt(doneRatioVal.replace('%', ''), 10) : statusName === 'Closed' ? 100 : statusName === 'In Progress' ? 50 : 0;
 
       const task: PersonalTask = {
         id: `task_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`,
         week,
         assignedDate,
+        trackerName,
         category,
         title,
         description,
-        priority,
+        priorityName,
         estimatedHours,
-        status,
+        statusName,
         resultNote,
         dueDate,
         delayReason,
+        parentTaskId: parentTaskId || undefined,
+        doneRatio: Number.isFinite(doneRatio) ? doneRatio : 0,
         source: 'excel',
         createdAt: nowStr,
         updatedAt: nowStr,
@@ -275,28 +307,30 @@ export function convertRowsToTasks(
 }
 
 /**
- * Export PersonalTask[] into an Excel file (.xlsx) and trigger browser download.
+ * Export PersonalTask[] into styled Excel (.xlsx) file.
  */
 export async function exportPersonalTasksToExcel(tasks: PersonalTask[], filename = 'Ke_hoach_dau_viec_ca_nhan.xlsx') {
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'Personal Task Hub';
+  workbook.creator = 'Redmine PM Workspace';
   workbook.created = new Date();
 
   const worksheet = workbook.addWorksheet('Kế hoạch đầu việc');
 
-  // Header row
   const headers = [
     'Tuần',
-    'Ngày giao',
-    'Nhóm việc',
-    'Tên việc cần làm',
+    'Ngày bắt đầu',
+    'Tracker',
+    'Nhóm việc (Category)',
+    'Tên việc cần làm (Subject)',
     'Mô tả chi tiết',
-    'Mức độ ưu tiên',
+    'Mức độ ưu tiên (Priority)',
     'Thời lượng (h)',
-    'Trạng thái',
-    'Kết quả công việc',
-    'Deadline',
+    '% Hoàn thành',
+    'Trạng thái (Status)',
+    'Kết quả công việc / Tiến độ',
+    'Hạn chót (Deadline)',
+    'Task cha',
     'Lý do trễ hạn',
     'Nguồn',
   ];
@@ -306,89 +340,71 @@ export async function exportPersonalTasksToExcel(tasks: PersonalTask[], filename
   headerRow.fill = {
     type: 'pattern',
     pattern: 'solid',
-    fgColor: { argb: 'FF1E293B' }, // Slate-800
+    fgColor: { argb: 'FF1E293B' },
   };
   headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
   headerRow.height = 28;
 
-  // Add tasks
   tasks.forEach((t) => {
-    const priorityLabel =
-      t.priority === 'urgent' ? 'Gấp' : t.priority === 'high' ? 'Cao' : t.priority === 'low' ? 'Thấp' : 'Bình thường';
-
-    const statusLabel =
-      t.status === 'done'
-        ? 'Hoàn thành'
-        : t.status === 'in_progress'
-        ? 'Đang làm'
-        : t.status === 'review'
-        ? 'Chờ review'
-        : t.status === 'deferred'
-        ? 'Tạm hoãn'
-        : 'Chưa làm';
-
     const row = worksheet.addRow([
       t.week || '',
       t.assignedDate || '',
+      t.trackerName || 'Task',
       t.category || '',
       t.title || '',
       t.description || '',
-      priorityLabel,
+      t.priorityName || 'Normal',
       t.estimatedHours || '',
-      statusLabel,
+      t.doneRatio !== undefined ? `${t.doneRatio}%` : '0%',
+      t.statusName || 'New',
       t.resultNote || '',
       t.dueDate || '',
+      t.parentTaskId ? `#${t.parentTaskId}` : '',
       t.delayReason || '',
       t.source === 'redmine' ? 'Redmine' : t.source === 'excel' ? 'Excel' : 'Thủ công',
     ]);
 
-    // Colorize status cell
-    const statusCell = row.getCell(8);
-    if (t.status === 'done') {
-      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } }; // Light green
+    const statusCell = row.getCell(10);
+    const sName = (t.statusName || '').toLowerCase();
+    if (sName.includes('closed') || sName.includes('resolved') || sName.includes('verified')) {
+      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
       statusCell.font = { color: { argb: 'FF166534' }, bold: true };
-    } else if (t.status === 'in_progress') {
-      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF08A' } }; // Light yellow
+    } else if (sName.includes('in progress') || sName.includes('testing')) {
+      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF08A' } };
       statusCell.font = { color: { argb: 'FF854D0E' }, bold: true };
     }
 
-    // Colorize priority cell
-    const prioCell = row.getCell(6);
-    if (t.priority === 'urgent') {
-      prioCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } }; // Light red
+    const prioCell = row.getCell(7);
+    const pName = (t.priorityName || '').toLowerCase();
+    if (pName.includes('urgent') || pName.includes('immediate') || pName.includes('must have')) {
+      prioCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
       prioCell.font = { color: { argb: 'FF991B1B' }, bold: true };
     }
 
-    // Result note color (red text if pending/issue, like in user excel)
-    const resultCell = row.getCell(9);
-    if (t.resultNote && t.status !== 'done') {
+    const resultCell = row.getCell(11);
+    if (t.resultNote && !sName.includes('closed')) {
       resultCell.font = { color: { argb: 'FFB91C1C' } };
     }
   });
 
-  // Auto-fit column widths
   worksheet.columns = [
-    { width: 22 }, // Tuần
-    { width: 14 }, // Ngày giao
-    { width: 18 }, // Nhóm việc
-    { width: 35 }, // Tên việc
-    { width: 45 }, // Mô tả chi tiết
-    { width: 16 }, // Mức độ ưu tiên
-    { width: 14 }, // Thời lượng
-    { width: 16 }, // Trạng thái
-    { width: 40 }, // Kết quả công việc
-    { width: 14 }, // Deadline
-    { width: 30 }, // Lý do trễ hạn
-    { width: 12 }, // Nguồn
+    { width: 22 },
+    { width: 14 },
+    { width: 12 },
+    { width: 18 },
+    { width: 35 },
+    { width: 45 },
+    { width: 18 },
+    { width: 14 },
+    { width: 14 },
+    { width: 16 },
+    { width: 40 },
+    { width: 14 },
+    { width: 12 },
+    { width: 28 },
+    { width: 12 },
   ];
 
-  // Enable word wrap for multiline columns
-  worksheet.getColumn(4).alignment = { wrapText: true, vertical: 'top' };
-  worksheet.getColumn(5).alignment = { wrapText: true, vertical: 'top' };
-  worksheet.getColumn(9).alignment = { wrapText: true, vertical: 'top' };
-  worksheet.getColumn(11).alignment = { wrapText: true, vertical: 'top' };
-
-  // Generate buffer and trigger browser download
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);

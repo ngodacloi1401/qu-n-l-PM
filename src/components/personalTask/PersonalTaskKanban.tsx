@@ -1,45 +1,100 @@
 import React from 'react';
-import { Clock, AlertCircle, Edit2, CheckCircle2, ArrowRight, ArrowLeft } from 'lucide-react';
-import type { PersonalTask, TaskStatus, TaskPriority } from '../../types/personalTask';
+import { Clock, AlertCircle, Edit2, ArrowRight, ArrowLeft, Bug } from 'lucide-react';
+import type { PersonalTask } from '../../types/personalTask';
+import type { RedmineStatus } from '../../types/redmine';
 
 interface PersonalTaskKanbanProps {
   tasks: PersonalTask[];
+  statuses: RedmineStatus[];
   onUpdateTask: (task: PersonalTask) => void;
   onEditTask: (task: PersonalTask) => void;
 }
 
-interface KanbanCol {
-  id: TaskStatus;
+interface KanbanColConfig {
+  id: string; // group key
   title: string;
   badgeBg: string;
   badgeText: string;
   borderTop: string;
+  matchStatuses: string[];
 }
-
-const COLUMNS: KanbanCol[] = [
-  { id: 'todo', title: 'Chưa làm', badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', borderTop: 'border-t-slate-400' },
-  { id: 'in_progress', title: 'Đang làm', badgeBg: 'bg-amber-100', badgeText: 'text-amber-800', borderTop: 'border-t-amber-500' },
-  { id: 'review', title: 'Chờ review', badgeBg: 'bg-blue-100', badgeText: 'text-blue-800', borderTop: 'border-t-blue-500' },
-  { id: 'done', title: 'Hoàn thành', badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-800', borderTop: 'border-t-emerald-500' },
-];
 
 export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
   tasks,
+  statuses,
   onUpdateTask,
   onEditTask,
 }) => {
   const todayStr = new Date().toISOString().split('T')[0];
 
+  // Standard 4 columns aligned with Redmine lifecycle:
+  // 1. Mới / To Do (New, Ready...)
+  // 2. Đang làm (In Progress...)
+  // 3. Kiểm thử / Chờ duyệt (QA testing, QA Verified, Feedback, Ready For QA...)
+  // 4. Hoàn thành / Đã đóng (Resolved, Closed, On PROD, Client Verified...)
+  const columns: KanbanColConfig[] = [
+    {
+      id: 'new',
+      title: 'New (Mới tạo)',
+      badgeBg: 'bg-slate-100',
+      badgeText: 'text-slate-700',
+      borderTop: 'border-t-slate-400',
+      matchStatuses: ['new', 'mới', 'chưa làm', 'to do'],
+    },
+    {
+      id: 'in_progress',
+      title: 'In Progress (Đang làm)',
+      badgeBg: 'bg-amber-100',
+      badgeText: 'text-amber-800',
+      borderTop: 'border-t-amber-500',
+      matchStatuses: ['in progress', 'đang làm', 'doing', 'on stg', 'pending'],
+    },
+    {
+      id: 'review',
+      title: 'QA / Feedback (Chờ duyệt)',
+      badgeBg: 'bg-blue-100',
+      badgeText: 'text-blue-800',
+      borderTop: 'border-t-blue-500',
+      matchStatuses: ['qa testing', 'ready for qa', 'qa verified', 'feedback', 'review', 'kiểm tra'],
+    },
+    {
+      id: 'closed',
+      title: 'Closed / Resolved (Đã đóng)',
+      badgeBg: 'bg-emerald-100',
+      badgeText: 'text-emerald-800',
+      borderTop: 'border-t-emerald-500',
+      matchStatuses: ['closed', 'resolved', 'close-duplicated', 'on prod', 'client verified', 'hoàn thành', 'done'],
+    },
+  ];
+
+  const getColForTask = (statusName: string): string => {
+    const s = (statusName || '').toLowerCase().trim();
+    for (const col of columns) {
+      if (col.matchStatuses.some((m) => s.includes(m))) {
+        return col.id;
+      }
+    }
+    return 'new';
+  };
+
   const moveStatus = (task: PersonalTask, direction: 'next' | 'prev') => {
-    const statusOrder: TaskStatus[] = ['todo', 'in_progress', 'review', 'done'];
-    const currentIdx = statusOrder.indexOf(task.status);
+    const colOrder = ['new', 'in_progress', 'review', 'closed'];
+    const currentCol = getColForTask(task.statusName);
+    const currentIdx = colOrder.indexOf(currentCol);
     if (currentIdx === -1) return;
 
     const nextIdx = direction === 'next' ? currentIdx + 1 : currentIdx - 1;
-    if (nextIdx >= 0 && nextIdx < statusOrder.length) {
+    if (nextIdx >= 0 && nextIdx < colOrder.length) {
+      const targetColId = colOrder[nextIdx];
+      let targetStatusName = 'New';
+      if (targetColId === 'in_progress') targetStatusName = 'In Progress';
+      else if (targetColId === 'review') targetStatusName = 'QA testing';
+      else if (targetColId === 'closed') targetStatusName = 'Closed';
+
       onUpdateTask({
         ...task,
-        status: statusOrder[nextIdx],
+        statusName: targetStatusName,
+        doneRatio: targetColId === 'closed' ? 100 : targetColId === 'new' ? 0 : 50,
         updatedAt: new Date().toISOString(),
       });
     }
@@ -47,8 +102,8 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
-      {COLUMNS.map((col) => {
-        const colTasks = tasks.filter((t) => t.status === col.id);
+      {columns.map((col) => {
+        const colTasks = tasks.filter((t) => getColForTask(t.statusName) === col.id);
 
         return (
           <div
@@ -73,59 +128,75 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                 </div>
               ) : (
                 colTasks.map((task) => {
-                  const isOverdue = task.dueDate && task.dueDate < todayStr && task.status !== 'done';
-                  const isToday = task.dueDate && task.dueDate === todayStr && task.status !== 'done';
+                  const isClosed = col.id === 'closed';
+                  const isOverdue = task.dueDate && task.dueDate < todayStr && !isClosed;
+                  const isToday = task.dueDate && task.dueDate === todayStr && !isClosed;
+                  const pName = (task.priorityName || '').toLowerCase();
+                  const isUrgent = pName.includes('urgent') || pName.includes('must have');
+                  const isHigh = pName.includes('high') || pName.includes('should have');
 
                   return (
                     <div
                       key={task.id}
                       className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-xs hover:shadow-md transition-all group"
                     >
-                      {/* Category & Priority */}
+                      {/* Tracker & Priority */}
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded truncate max-w-[120px]">
-                          {task.category || 'Chung'}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                            {task.trackerName || 'Task'}
+                          </span>
+                          <span className="text-[10px] font-semibold text-slate-500 truncate max-w-[100px]">
+                            {task.category || 'Chung'}
+                          </span>
+                        </div>
 
-                        {task.priority === 'urgent' ? (
+                        {isUrgent ? (
                           <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.2 rounded">
-                            🔴 Gấp
+                            🔴 {task.priorityName}
                           </span>
-                        ) : task.priority === 'high' ? (
+                        ) : isHigh ? (
                           <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded">
-                            🟠 Cao
+                            🟠 {task.priorityName}
                           </span>
-                        ) : null}
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-medium">{task.priorityName}</span>
+                        )}
                       </div>
 
                       {/* Title */}
                       <h5
                         onClick={() => onEditTask(task)}
                         className={`text-xs font-bold text-slate-900 group-hover:text-indigo-600 leading-snug cursor-pointer mb-1.5 ${
-                          task.status === 'done' ? 'line-through text-slate-400' : ''
+                          isClosed ? 'line-through text-slate-400' : ''
                         }`}
                       >
+                        {task.parentTaskId && (
+                          <span className="font-mono text-[10px] text-slate-500 mr-1 font-bold">
+                            #{task.parentTaskId}
+                          </span>
+                        )}
                         {task.title}
                       </h5>
 
-                      {/* Week & Redmine badge */}
-                      <div className="flex items-center gap-2 text-[10px] text-slate-500 mb-2">
-                        <span className="truncate max-w-[140px] font-medium">{task.week}</span>
-                        {task.source === 'redmine' && (
-                          <span className="text-red-600 font-mono font-bold">#{task.redmineIssueId}</span>
-                        )}
+                      {/* Week & Assignee */}
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 mb-2">
+                        <span className="truncate max-w-[130px] font-medium">{task.week}</span>
+                        {task.assigneeName && <span>{task.assigneeName}</span>}
                       </div>
 
                       {/* Result Note if present */}
                       {task.resultNote && (
-                        <p className={`text-[11px] p-2 rounded-lg bg-slate-50 mb-2 line-clamp-2 ${
-                          task.status !== 'done' ? 'text-red-700 font-medium' : 'text-slate-600'
-                        }`}>
+                        <p
+                          className={`text-[11px] p-2 rounded-lg bg-slate-50 mb-2 line-clamp-2 ${
+                            !isClosed ? 'text-red-700 font-medium' : 'text-slate-600'
+                          }`}
+                        >
                           {task.resultNote}
                         </p>
                       )}
 
-                      {/* Footer: Due date & Actions */}
+                      {/* Status pill & Footer */}
                       <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px]">
                         <div>
                           {isOverdue ? (
@@ -144,7 +215,7 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                         </div>
 
                         <div className="flex items-center gap-1">
-                          {col.id !== 'todo' && (
+                          {col.id !== 'new' && (
                             <button
                               onClick={() => moveStatus(task, 'prev')}
                               title="Chuyển về trạng thái trước"
@@ -155,12 +226,12 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                           )}
                           <button
                             onClick={() => onEditTask(task)}
-                            title="Sửa"
+                            title="Chỉnh sửa thuộc tính"
                             className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 cursor-pointer"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
-                          {col.id !== 'done' && (
+                          {col.id !== 'closed' && (
                             <button
                               onClick={() => moveStatus(task, 'next')}
                               title="Chuyển sang trạng thái tiếp theo"

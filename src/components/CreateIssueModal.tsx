@@ -3,18 +3,20 @@ import { X, Plus, AlertCircle, Check, Sparkles, Layers, Tag, Calendar, User, Clo
 import {
   RedmineProject,
   RedmineTracker,
+  RedmineStatus,
   RedminePriority,
   RedmineMembership,
   RedmineVersion,
   RedmineCustomField,
   RedmineIssueCategory,
 } from '../types/redmine';
-import { createIssue } from '../services/redmineApi';
+import { createIssue, DEFAULT_REDMINE_STATUSES } from '../services/redmineApi';
 
 interface CreateIssueModalProps {
   projects: RedmineProject[];
   defaultProjectId: string;
   trackers: RedmineTracker[];
+  statuses?: RedmineStatus[];
   priorities: RedminePriority[];
   memberships: RedmineMembership[];
   versions: RedmineVersion[];
@@ -28,6 +30,7 @@ export const CreateIssueModal: React.FC<CreateIssueModalProps> = ({
   projects,
   defaultProjectId,
   trackers,
+  statuses = DEFAULT_REDMINE_STATUSES,
   priorities,
   memberships,
   versions,
@@ -43,6 +46,7 @@ export const CreateIssueModal: React.FC<CreateIssueModalProps> = ({
 
   const [projectId, setProjectId] = useState<number>(initialProjectId);
   const [trackerId, setTrackerId] = useState<number>(trackers[0]?.id || 4);
+  const [statusId, setStatusId] = useState<number>(statuses[0]?.id || 1);
   const [subject, setSubject] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   const [priorityId, setPriorityId] = useState<number>(priorities[0]?.id || 29);
@@ -94,6 +98,7 @@ export const CreateIssueModal: React.FC<CreateIssueModalProps> = ({
       await createIssue({
         project_id: projectId,
         tracker_id: trackerId,
+        status_id: statusId,
         subject: subject.trim(),
         description: description.trim() || undefined,
         priority_id: priorityId,
@@ -152,8 +157,8 @@ export const CreateIssueModal: React.FC<CreateIssueModalProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Project & Tracker */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Project, Tracker & Status */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">Dự án *</label>
               <select
@@ -179,6 +184,21 @@ export const CreateIssueModal: React.FC<CreateIssueModalProps> = ({
                 {trackers.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Trạng thái (Status) *</label>
+              <select
+                value={statusId}
+                onChange={(e) => setStatusId(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:ring-2 focus:ring-indigo-500"
+              >
+                {statuses.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} {s.is_closed ? '(Closed)' : ''}
                   </option>
                 ))}
               </select>

@@ -1,27 +1,43 @@
-export type TaskPriority = 'urgent' | 'high' | 'normal' | 'low';
-export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'done' | 'deferred';
-
 export interface PersonalTask {
   id: string;
   week: string; // e.g. "Tuần 09 (24/2-27/02)"
-  assignedDate: string; // e.g. "2026-02-24" or "24/02/2026"
-  category: string; // Nhóm việc: Platform, HOTFIX, Quản trị, BIM...
-  title: string; // Tên việc cần làm
+  assignedDate: string; // Start date (YYYY-MM-DD)
+  category: string; // Category / Nhóm việc (e.g. CAD ADDIN SHOP DRAWING, Platform, HOTFIX...)
+  title: string; // Subject / Tên việc cần làm
   description: string; // Mô tả chi tiết
-  priority: TaskPriority; // Mức độ ưu tiên
-  estimatedHours?: string | number; // Thời lượng
-  status: TaskStatus; // Trạng thái
+
+  // Redmine Aligned Fields:
+  trackerId?: number; // e.g. 6 (Bug), 4 (Task), 1 (User Story), 16 (Feature)...
+  trackerName?: string; // e.g. "Bug", "Task", "Feature"
+  statusId?: number;
+  statusName: string; // e.g. "New", "In Progress", "Resolved", "Feedback", "Closed"...
+  priorityId?: number;
+  priorityName: string; // e.g. "Normal", "High", "Urgent", "Must Have", "Should Have"...
+
+  assigneeId?: number;
+  assigneeName?: string;
+  parentTaskId?: string | number; // e.g. 41470
+  targetVersionId?: number;
+  targetVersionName?: string;
+  doneRatio?: number; // 0 - 100%
+  estimatedHours?: string | number; // Giờ ước tính (Hours)
+
+  // Custom fields per tracker (Regression Bug, Not bug, Review, Report By, Story points, ProjectCode...):
+  customFields?: Record<string, any>;
+
   resultNote: string; // Kết quả công việc / Ghi chú tiến độ
-  dueDate: string; // Deadline
+  dueDate: string; // Hạn chót / Due date
   delayReason?: string; // Lý do trễ hạn
   source: 'excel' | 'manual' | 'redmine';
   redmineIssueId?: number;
+  projectId?: number;
+  projectName?: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface ExcelColumnMapping {
-  weekCol: number; // -1 if not mapped
+  weekCol: number;
   assignedDateCol: number;
   categoryCol: number;
   titleCol: number;
@@ -32,6 +48,9 @@ export interface ExcelColumnMapping {
   resultNoteCol: number;
   dueDateCol: number;
   delayReasonCol: number;
+  trackerCol?: number;
+  parentTaskCol?: number;
+  doneRatioCol?: number;
 }
 
 export interface ExcelParsedSheet {
@@ -39,13 +58,4 @@ export interface ExcelParsedSheet {
   headers: string[];
   rows: (string | number | null)[][];
   totalRows: number;
-}
-
-export interface PersonalTaskFilter {
-  search: string;
-  week: string;
-  category: string;
-  status: string;
-  priority: string;
-  overdueOnly: boolean;
 }

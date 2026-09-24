@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { X, CheckCircle2, Search, ArrowDownToLine, Tag, ExternalLink } from 'lucide-react';
+import { X, CheckCircle2, Search, ArrowDownToLine, Tag } from 'lucide-react';
 import type { RedmineIssue, RedmineUser } from '../../types/redmine';
-import type { PersonalTask, TaskPriority, TaskStatus } from '../../types/personalTask';
+import type { PersonalTask } from '../../types/personalTask';
 
 interface RedmineSyncModalProps {
   issues: RedmineIssue[];
@@ -22,10 +22,9 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
 }) => {
   const [search, setSearch] = useState('');
   const [onlyMine, setOnlyMine] = useState(true);
-  const [targetWeek, setTargetWeek] = useState('Kế hoạch tuần này');
+  const [targetWeek, setTargetWeek] = useState('Tuần 09 (24/2-27/02)');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-  // Filter available issues
   const availableIssues = useMemo(() => {
     return issues.filter((iss) => {
       if (onlyMine && currentUser) {
@@ -62,35 +61,41 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
     const toImport = issues.filter((iss) => selectedIds.has(iss.id));
 
     const newTasks: PersonalTask[] = toImport.map((iss) => {
-      // Map Redmine priority
-      let priority: TaskPriority = 'normal';
-      const pName = iss.priority?.name?.toLowerCase() || '';
-      if (pName.includes('urgent') || pName.includes('khẩn') || pName.includes('gấp')) priority = 'urgent';
-      else if (pName.includes('high') || pName.includes('cao')) priority = 'high';
-      else if (pName.includes('low') || pName.includes('thấp')) priority = 'low';
-
-      // Map Redmine status
-      let status: TaskStatus = 'todo';
-      const sName = iss.status?.name?.toLowerCase() || '';
-      if (sName.includes('closed') || sName.includes('đóng') || sName.includes('hoàn thành')) status = 'done';
-      else if (sName.includes('in progress') || sName.includes('đang làm')) status = 'in_progress';
-      else if (sName.includes('feedback') || sName.includes('review') || sName.includes('chờ duyệt')) status = 'review';
+      const customFieldMap: Record<string, any> = {};
+      if (iss.custom_fields) {
+        iss.custom_fields.forEach((cf) => {
+          customFieldMap[cf.name] = cf.value;
+        });
+      }
 
       return {
         id: `task_redmine_${iss.id}_${Date.now()}`,
         week: targetWeek,
         assignedDate: iss.start_date || iss.created_on?.split('T')[0] || '',
-        category: iss.project.name || 'Redmine',
-        title: `[#${iss.id}] ${iss.subject}`,
+        category: iss.category?.name || iss.project.name || 'CAD ADDIN SHOP DRAWING',
+        title: iss.subject,
         description: iss.description || '',
-        priority,
-        estimatedHours: iss.estimated_hours ? String(iss.estimated_hours) : '2.0',
-        status,
+        trackerId: iss.tracker?.id,
+        trackerName: iss.tracker?.name || 'Task',
+        statusId: iss.status?.id,
+        statusName: iss.status?.name || 'New',
+        priorityId: iss.priority?.id,
+        priorityName: iss.priority?.name || 'Normal',
+        assigneeId: iss.assigned_to?.id,
+        assigneeName: iss.assigned_to?.name || '',
+        parentTaskId: iss.parent?.id,
+        targetVersionId: iss.fixed_version?.id,
+        targetVersionName: iss.fixed_version?.name,
+        doneRatio: iss.done_ratio !== undefined ? iss.done_ratio : 0,
+        estimatedHours: iss.estimated_hours ? String(iss.estimated_hours) : undefined,
+        customFields: customFieldMap,
         resultNote: '',
         dueDate: iss.due_date || '',
         delayReason: '',
         source: 'redmine',
         redmineIssueId: iss.id,
+        projectId: iss.project.id,
+        projectName: iss.project.name,
         createdAt: nowStr,
         updatedAt: nowStr,
       };
@@ -112,7 +117,7 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
             <div>
               <h3 className="text-base font-bold text-slate-900">Kéo công việc từ Redmine sang việc cá nhân</h3>
               <p className="text-xs text-slate-500">
-                Chọn các issue được giao trên Redmine để gom về bảng theo dõi cá nhân của bạn
+                Đồng bộ nguyên trạng Tracker, Status, Priority và các Custom Fields từ Redmine
               </p>
             </div>
           </div>
@@ -155,7 +160,7 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
               type="text"
               value={targetWeek}
               onChange={(e) => setTargetWeek(e.target.value)}
-              placeholder="VD: Tuần 09"
+              placeholder="VD: Tuần 09 (24/2-27/02)"
               className="text-xs px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-medium text-slate-800"
             />
           </div>
@@ -201,14 +206,17 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-mono font-bold text-slate-900">#{iss.id}</span>
+                      <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
+                        {iss.tracker?.name}
+                      </span>
                       <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                         {iss.project.name}
                       </span>
-                      <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                        {iss.tracker?.name}
-                      </span>
-                      <span className="text-xs font-medium text-slate-700 bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded">
+                      <span className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                         {iss.status?.name}
+                      </span>
+                      <span className="text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded">
+                        {iss.priority?.name}
                       </span>
                       {alreadyImported && (
                         <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded">
@@ -221,6 +229,7 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
                       <span>Người nhận: {iss.assigned_to?.name || 'Chưa gán'}</span>
                       {iss.due_date && <span>Hạn: {iss.due_date}</span>}
                       {iss.estimated_hours && <span>Ước tính: {iss.estimated_hours}h</span>}
+                      {iss.done_ratio !== undefined && <span>{iss.done_ratio}%</span>}
                     </div>
                   </div>
                 </div>
