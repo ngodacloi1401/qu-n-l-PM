@@ -42,8 +42,6 @@ import {
   getSavedTasks,
   saveTasks,
   getUserScopeKey,
-  getInitialSampleTasks,
-  INITIAL_SAMPLE_TASKS,
 } from '../../services/personalTaskStorage';
 import { exportPersonalTasksToExcel } from '../../services/personalTaskExcel';
 import { PersonalTaskKanban } from './PersonalTaskKanban';
@@ -104,8 +102,29 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
     setTasks(getSavedTasks(freshScopeKey, currentUserName));
   }, [userScopeKey, currentUserName, currentUser]);
 
+  // Clean up any legacy fake weeks on redmine tasks from local storage
+  useEffect(() => {
+    setTasks((prev) => {
+      let changed = false;
+      const cleaned = prev.map((t) => {
+        if (t.source === 'redmine' && t.week) {
+          changed = true;
+          return { ...t, week: '' };
+        }
+        return t;
+      });
+      return changed ? cleaned : prev;
+    });
+  }, []);
+
+  // Save changes to localStorage whenever tasks change (scoped by user account)
+  useEffect(() => {
+    saveTasks(tasks, userScopeKey);
+  }, [tasks, userScopeKey]);
+
   // Filters
   const [search, setSearch] = useState('');
+  const [selectedProject, setSelectedProject] = useState('all');
   const [selectedWeek, setSelectedWeek] = useState('all');
   const [selectedTracker, setSelectedTracker] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -119,40 +138,136 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   const [showRedmineSyncModal, setShowRedmineSyncModal] = useState(false);
   const [editingTask, setEditingTask] = useState<PersonalTask | null>(null);
 
-  // Save changes to localStorage whenever tasks change (scoped by user account)
-  useEffect(() => {
-    saveTasks(tasks, userScopeKey);
-  }, [tasks, userScopeKey]);
-
   // Split tasks by source
   const excelTasks = useMemo(() => tasks.filter((t) => t.source === 'excel' || t.source === 'manual'), [tasks]);
   const redmineTasks = useMemo(() => tasks.filter((t) => t.source === 'redmine'), [tasks]);
   const activeTasks = activeTab === 'excel' ? excelTasks : redmineTasks;
 
-  // Unique weeks and categories for filter dropdowns
-  const availableWeeks = useMemo(() => {
-    const set = new Set<string>();
+  // Available Projects (from Redmine projects list + any project in tasks)
+  const availableProjects = useMemo(() => {
+    const map = new Map<string, string>();
+    projects.forEach((p) => {
+      if (p.name) map.set(p.name, p.name);
+    });
     activeTasks.forEach((t) => {
-      if (t.week) set.add(t.week);
+      if (t.projectName) {
+        map.set(t.projectName, t.projectName);
+      } else if (t.category) {
+        const found = projects.find((p) => p.name.toLowerCase() === t.category.toLowerCase());
+        if (found) map.set(found.name, found.name);
+      }
+    });
+    return Array.from(map.values());
+  }, [projects, activeTasks]);
+
+  // Filter tasks by selected project
+  const isTaskInProject = (t: PersonalTask, projName: string): boolean => {
+    if (projName === 'all') return true;
+    const pLower = projName.toLowerCase();
+    if (t.projectName && t.projectName.toLowerCase() === pLower) return true;
+    if (t.projectId) {
+      const found = projects.find((p) => String(p.id) === String(t.projectId));
+      if (found && found.name.toLowerCase() === pLower) return true;
+    }
+    if (t.category && t.category.toLowerCase() === pLower) return true;
+    return false;
+  };
+
+  const projectTasks = useMemo(() => {
+    return activeTasks.filter((t) => isTaskInProject(t, selectedProject));
+  }, [activeTasks, selectedProject, projects]);
+
+  // Dynamic filter options based on the chosen Project:
+  // 1. Weeks: ONLY for Excel tab, and only if weeks actually exist in tasks
+  const availableWeeks = useMemo(() => {
+    if (activeTab !== 'excel') return [];
+    const set = new Set<string>();
+    projectTasks.forEach((t) => {
+      if (t.week && t.week.trim()) set.add(t.week.trim());
     });
     return Array.from(set);
-  }, [activeTasks]);
+  }, [projectTasks, activeTab]);
 
+  // 2. Trackers: accurately following this project
+  const availableTrackers = useMemo(() => {
+    const set = new Set<string>();
+    projectTasks.forEach((t) => {
+      if (t.trackerName) set.add(t.trackerName);
+    });
+    if (set.size === 0) {
+      trackers.forEach((trk) => set.add(trk.name));
+    }
+    return Array.from(set);
+  }, [projectTasks, trackers]);
+
+  // 3. Categories: accurately following this project
   const availableCategories = useMemo(() => {
     const set = new Set<string>();
-    activeTasks.forEach((t) => {
-      if (t.category) set.add(t.category);
+    projectTasks.forEach((t) => {
+      if (t.category && t.category.toLowerCase() !== selectedProject.toLowerCase()) {
+        set.add(t.category);
+      }
     });
     return Array.from(set);
-  }, [activeTasks]);
+  }, [projectTasks, selectedProject]);
 
-  const existingRedmineIds = useMemo(() => {
-    const set = new Set<number>();
-    tasks.forEach((t) => {
-      if (t.redmineIssueId) set.add(t.redmineIssueId);
+  // 4. Statuses: accurately following this project
+  const availableStatuses = useMemo(() => {
+    const set = new Set<string>();
+    projectTasks.forEach((t) => {
+      if (t.statusName) set.add(t.statusName);
     });
-    return set;
-  }, [tasks]);
+    if (set.size === 0) {
+      statuses.forEach((st) => set.add(st.name));
+    }
+    return Array.from(set);
+  }, [projectTasks, statuses]);
+
+  // 5. Priorities: accurately following this project
+  const availablePriorities = useMemo(() => {
+    const set = new Set<string>();
+    // Collect priorities that actually appear in this project's tasks
+    projectTasks.forEach((t) => {
+      if (t.priorityName) set.add(t.priorityName);
+    });
+    // Fallback standard and Redmine priorities if empty
+    if (set.size === 0) {
+      ['Low', 'Normal', 'High', 'Urgent', 'Immediate'].forEach((p) => set.add(p));
+      priorities.forEach((p) => set.add(p.name));
+    }
+    return Array.from(set);
+  }, [projectTasks, priorities]);
+
+  // Auto-reset filters if current value is no longer valid for the selected project
+  useEffect(() => {
+    if (selectedTracker !== 'all' && !availableTrackers.includes(selectedTracker)) {
+      setSelectedTracker('all');
+    }
+  }, [availableTrackers, selectedTracker]);
+
+  useEffect(() => {
+    if (selectedCategory !== 'all' && !availableCategories.includes(selectedCategory)) {
+      setSelectedCategory('all');
+    }
+  }, [availableCategories, selectedCategory]);
+
+  useEffect(() => {
+    if (selectedStatus !== 'all' && !availableStatuses.includes(selectedStatus)) {
+      setSelectedStatus('all');
+    }
+  }, [availableStatuses, selectedStatus]);
+
+  useEffect(() => {
+    if (selectedPriority !== 'all' && !availablePriorities.includes(selectedPriority)) {
+      setSelectedPriority('all');
+    }
+  }, [availablePriorities, selectedPriority]);
+
+  useEffect(() => {
+    if (selectedWeek !== 'all' && !availableWeeks.includes(selectedWeek)) {
+      setSelectedWeek('all');
+    }
+  }, [availableWeeks, selectedWeek]);
 
   // Task operations
   const handleUpdateTask = (updated: PersonalTask) => {
@@ -185,8 +300,10 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   };
 
   const handleExportExcel = () => {
-    const tasksToExport = activeTab === 'excel' ? filteredTasks : filteredTasks;
-    exportPersonalTasksToExcel(tasksToExport, `Ke_hoach_dau_viec_${activeTab}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    exportPersonalTasksToExcel(
+      filteredTasks,
+      `Ke_hoach_dau_viec_${activeTab}_${selectedProject !== 'all' ? selectedProject + '_' : ''}${new Date().toISOString().split('T')[0]}.xlsx`
+    );
   };
 
   const handleResetSampleData = () => {
@@ -201,7 +318,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
     }
   };
 
-  // KPI Calculations
+  // KPI Calculations based on projectTasks
   const todayStr = new Date().toISOString().split('T')[0];
 
   const isClosedTask = (t: PersonalTask) => {
@@ -211,21 +328,21 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
     return lower.includes('closed') || lower.includes('done') || lower.includes('hoàn thành');
   };
 
-  const totalCount = activeTasks.length;
-  const inProgressCount = activeTasks.filter((t) => !isClosedTask(t) && t.statusName?.toLowerCase().includes('in progress')).length;
-  const doneCount = activeTasks.filter((t) => isClosedTask(t)).length;
-  const urgentCount = activeTasks.filter((t) => {
+  const totalCount = projectTasks.length;
+  const inProgressCount = projectTasks.filter((t) => !isClosedTask(t) && t.statusName?.toLowerCase().includes('in progress')).length;
+  const doneCount = projectTasks.filter((t) => isClosedTask(t)).length;
+  const urgentCount = projectTasks.filter((t) => {
     const p = (t.priorityName || '').toLowerCase();
-    return !isClosedTask(t) && (p.includes('urgent') || p.includes('immediate') || p.includes('gấp'));
+    return !isClosedTask(t) && (p.includes('urgent') || p.includes('immediate') || p.includes('gấp') || p.includes('must have'));
   }).length;
-  const overdueCount = activeTasks.filter((t) => t.dueDate && t.dueDate < todayStr && !isClosedTask(t)).length;
-  const dueTodayCount = activeTasks.filter((t) => t.dueDate && t.dueDate === todayStr && !isClosedTask(t)).length;
+  const overdueCount = projectTasks.filter((t) => t.dueDate && t.dueDate < todayStr && !isClosedTask(t)).length;
+  const dueTodayCount = projectTasks.filter((t) => t.dueDate && t.dueDate === todayStr && !isClosedTask(t)).length;
   const donePercent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
 
   // Filtered tasks
   const filteredTasks = useMemo(() => {
-    return activeTasks.filter((t) => {
-      if (selectedWeek !== 'all' && t.week !== selectedWeek) return false;
+    return projectTasks.filter((t) => {
+      if (activeTab === 'excel' && selectedWeek !== 'all' && t.week !== selectedWeek) return false;
       if (selectedTracker !== 'all' && t.trackerName !== selectedTracker) return false;
       if (selectedCategory !== 'all' && t.category !== selectedCategory) return false;
       if (selectedStatus !== 'all' && t.statusName !== selectedStatus) return false;
@@ -247,12 +364,13 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
 
       return true;
     });
-  }, [activeTasks, selectedWeek, selectedTracker, selectedCategory, selectedStatus, selectedPriority, overdueOnly, search, todayStr, statuses]);
+  }, [projectTasks, activeTab, selectedWeek, selectedTracker, selectedCategory, selectedStatus, selectedPriority, overdueOnly, search, todayStr, statuses]);
 
   // Reset filters when switching tabs
   const switchTab = (tab: SubTab) => {
     setActiveTab(tab);
     setSearch('');
+    setSelectedProject('all');
     setSelectedWeek('all');
     setSelectedTracker('all');
     setSelectedCategory('all');
@@ -466,26 +584,42 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
         </div>
       </div>
 
-      {/* Filter Row */}
+      {/* Filter Row: Dynamic filters matching the chosen project */}
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-3 text-xs">
         <div className="flex items-center gap-1 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
           <Filter className="w-3.5 h-3.5" />
           <span>Lọc:</span>
         </div>
 
-        {/* Week filter */}
+        {/* Project filter */}
         <select
-          value={selectedWeek}
-          onChange={(e) => setSelectedWeek(e.target.value)}
-          className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
+          value={selectedProject}
+          onChange={(e) => setSelectedProject(e.target.value)}
+          className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-semibold"
         >
-          <option value="all">Tất cả tuần</option>
-          {availableWeeks.map((w) => (
-            <option key={w} value={w}>
-              {w}
+          <option value="all">Tất cả dự án ({availableProjects.length})</option>
+          {availableProjects.map((p) => (
+            <option key={p} value={p}>
+              📁 {p}
             </option>
           ))}
         </select>
+
+        {/* Week filter: ONLY displayed for Excel tab and if weeks exist */}
+        {activeTab === 'excel' && availableWeeks.length > 0 && (
+          <select
+            value={selectedWeek}
+            onChange={(e) => setSelectedWeek(e.target.value)}
+            className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
+          >
+            <option value="all">Tất cả tuần</option>
+            {availableWeeks.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+        )}
 
         {/* Tracker filter */}
         <select
@@ -494,51 +628,53 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
         >
           <option value="all">Tất cả Tracker</option>
-          {trackers.map((trk) => (
-            <option key={trk.id} value={trk.name}>
-              {trk.name}
+          {availableTrackers.map((name) => (
+            <option key={name} value={name}>
+              {name}
             </option>
           ))}
         </select>
 
         {/* Category filter */}
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
-        >
-          <option value="all">Tất cả Category</option>
-          {availableCategories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+        {availableCategories.length > 0 && (
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
+          >
+            <option value="all">Tất cả Category</option>
+            {availableCategories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        )}
 
-        {/* Status Redmine filter */}
+        {/* Status filter */}
         <select
           value={selectedStatus}
           onChange={(e) => setSelectedStatus(e.target.value)}
           className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
         >
           <option value="all">Tất cả Status</option>
-          {statuses.map((st) => (
-            <option key={st.id} value={st.name}>
-              {st.name}
+          {availableStatuses.map((name) => (
+            <option key={name} value={name}>
+              {name}
             </option>
           ))}
         </select>
 
-        {/* Priority Redmine filter */}
+        {/* Priority filter */}
         <select
           value={selectedPriority}
           onChange={(e) => setSelectedPriority(e.target.value)}
           className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
         >
           <option value="all">Tất cả Priority</option>
-          {priorities.map((p) => (
-            <option key={p.id} value={p.name}>
-              {p.name}
+          {availablePriorities.map((name) => (
+            <option key={name} value={name}>
+              {name}
             </option>
           ))}
         </select>
@@ -554,7 +690,8 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           <span className={overdueOnly ? 'text-rose-700 font-bold' : ''}>Chỉ việc quá hạn</span>
         </label>
 
-        {(selectedWeek !== 'all' ||
+        {(selectedProject !== 'all' ||
+          (activeTab === 'excel' && selectedWeek !== 'all') ||
           selectedTracker !== 'all' ||
           selectedCategory !== 'all' ||
           selectedStatus !== 'all' ||
@@ -563,6 +700,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           search) && (
           <button
             onClick={() => {
+              setSelectedProject('all');
               setSelectedWeek('all');
               setSelectedTracker('all');
               setSelectedCategory('all');
@@ -573,7 +711,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
             }}
             className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold underline cursor-pointer ml-auto"
           >
-            Xóa bộ lọc (Hiển thị {filteredTasks.length}/{activeTasks.length})
+            Xóa bộ lọc (Hiển thị {filteredTasks.length}/{projectTasks.length})
           </button>
         )}
       </div>
@@ -621,23 +759,20 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
       {showCreateModal && (
         <PersonalTaskModal
           task={editingTask}
-          existingWeeks={availableWeeks}
-          existingCategories={availableCategories}
-          statuses={statuses}
-          priorities={priorities}
-          trackers={trackers}
-          customFields={customFields}
-          categories={categories}
-          versions={versions}
-          memberships={memberships}
-          projects={projects}
-          currentUser={currentUser}
           onClose={() => {
             setShowCreateModal(false);
             setEditingTask(null);
           }}
           onSave={handleSaveModalTask}
           onDelete={handleDeleteTask}
+          trackers={trackers}
+          statuses={statuses}
+          priorities={priorities}
+          customFields={customFields}
+          existingWeeks={availableWeeks}
+          existingCategories={availableCategories}
+          projects={projects}
+          currentUser={currentUser}
         />
       )}
 
@@ -647,8 +782,11 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           currentUser={currentUser}
           baseUrl={baseUrl}
           onClose={() => setShowRedmineSyncModal(false)}
-          onImport={(newTasks) => setTasks((prev) => [...newTasks, ...prev])}
-          existingTaskRedmineIds={existingRedmineIds}
+          onImport={(newTasks) => {
+            handleImportTasks(newTasks, 'append');
+            switchTab('redmine');
+          }}
+          existingTaskRedmineIds={new Set(tasks.map((t) => t.redmineIssueId).filter((id): id is number => typeof id === 'number'))}
         />
       )}
     </div>

@@ -377,7 +377,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
                         type="text"
                         value={customWeek}
                         onChange={(e) => setCustomWeek(e.target.value)}
-                        placeholder="VD: Tuần 09 (24/2-27/02)"
+                        placeholder="VD: Tuần 01, Tuần 02..."
                         className="px-2.5 py-1 bg-white border border-amber-300 rounded text-xs text-slate-800 font-medium focus:outline-none"
                       />
                     </div>

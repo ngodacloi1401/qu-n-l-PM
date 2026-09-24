@@ -75,8 +75,7 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
   const [estimatedHours, setEstimatedHours] = useState(task?.estimatedHours !== undefined ? String(task.estimatedHours) : '');
   const [doneRatio, setDoneRatio] = useState<number>(task?.doneRatio !== undefined ? task.doneRatio : 0);
 
-  // Week planning & note fields (for weekly management)
-  const [week, setWeek] = useState(task?.week || existingWeeks[0] || 'Tuần 09 (24/2-27/02)');
+  const [week, setWeek] = useState(task?.week || existingWeeks[0] || '');
   const [resultNote, setResultNote] = useState(task?.resultNote || '');
   const [delayReason, setDelayReason] = useState(task?.delayReason || '');
 
@@ -472,7 +471,7 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
                   list="weeks-datalist"
                   value={week}
                   onChange={(e) => setWeek(e.target.value)}
-                  placeholder="Tuần 09 (24/2-27/02)"
+                  placeholder="VD: Tuần 01, Tuần 02..."
                   className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
                 />
                 <datalist id="weeks-datalist">

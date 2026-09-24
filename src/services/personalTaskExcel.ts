@@ -15,6 +15,7 @@ function normalizeHeader(str: string): string {
  */
 export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
   const mapping: ExcelColumnMapping = {
+    projectCol: -1,
     weekCol: -1,
     assignedDateCol: -1,
     categoryCol: -1,
@@ -35,6 +36,9 @@ export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
     const norm = normalizeHeader(h);
     if (!norm) return;
 
+    if (mapping.projectCol === -1 && (norm.includes('duan') || norm.includes('project'))) {
+      mapping.projectCol = idx;
+    }
     if (mapping.weekCol === -1 && (norm.includes('tuan') || norm.includes('week'))) {
       mapping.weekCol = idx;
     } else if (
@@ -265,10 +269,12 @@ export function convertRowsToTasks(
       const title = getVal(mapping.titleCol);
       if (!title) return null;
 
-      const week = getVal(mapping.weekCol) || defaultWeek || 'Kế hoạch tuần';
+      const week = getVal(mapping.weekCol) || defaultWeek || '';
       const assignedDate = formatDateString(getVal(mapping.assignedDateCol));
       const trackerName = getVal(mapping.trackerCol) || 'Task';
-      const category = getVal(mapping.categoryCol) || 'Chung';
+      const rawProject = getVal(mapping.projectCol);
+      const category = getVal(mapping.categoryCol) || rawProject || 'Chung';
+      const projectName = rawProject || (category !== 'Chung' ? category : undefined);
       const description = getVal(mapping.descriptionCol);
       const priorityName = parseRedminePriority(getVal(mapping.priorityCol));
       const estimatedHours = getVal(mapping.estimatedHoursCol);
@@ -286,6 +292,7 @@ export function convertRowsToTasks(
         assignedDate,
         trackerName,
         category,
+        projectName,
         title,
         description,
         priorityName,

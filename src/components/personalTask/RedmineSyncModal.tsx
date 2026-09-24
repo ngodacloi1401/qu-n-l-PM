@@ -23,7 +23,6 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
 }) => {
   const [search, setSearch] = useState('');
   const [onlyMine, setOnlyMine] = useState(true);
-  const [targetWeek, setTargetWeek] = useState('Tuần 09 (24/2-27/02)');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [remoteIssues, setRemoteIssues] = useState<RedmineIssue[]>([]);
   const [isLoadingRemote, setIsLoadingRemote] = useState(false);
@@ -117,7 +116,7 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
 
       return {
         id: `task_redmine_${iss.id}_${Date.now()}`,
-        week: targetWeek,
+        week: '',
         assignedDate: iss.start_date || iss.created_on?.split('T')[0] || '',
         category: iss.category?.name || iss.project?.name || 'CAD ADDIN SHOP DRAWING',
         title: iss.subject,
@@ -216,17 +215,6 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoadingRemote ? 'animate-spin text-red-600' : ''}`} />
             </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-600 font-medium">Gán vào tuần:</span>
-            <input
-              type="text"
-              value={targetWeek}
-              onChange={(e) => setTargetWeek(e.target.value)}
-              placeholder="VD: Tuần 09 (24/2-27/02)"
-              className="text-xs px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-medium text-slate-800"
-            />
           </div>
         </div>
 

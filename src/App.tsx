@@ -17,6 +17,7 @@ import {
   getIssueDetail,
   FetchProgress,
   IssueFilterParams,
+  DEFAULT_REDMINE_PRIORITIES,
 } from './services/redmineApi';
 import {
   RedmineUser,
@@ -138,7 +139,15 @@ export default function App() {
       if (user) setCurrentUser(user);
       if (sts && sts.length > 0) setStatuses(sts);
       if (trk && trk.length > 0) setTrackers(trk);
-      if (pri && pri.length > 0) setPriorities(pri);
+      if (pri && pri.length > 0) {
+        const merged = [...DEFAULT_REDMINE_PRIORITIES];
+        pri.forEach((p) => {
+          if (!merged.some((m) => m.name.toLowerCase() === p.name.toLowerCase())) {
+            merged.push(p);
+          }
+        });
+        setPriorities(merged);
+      }
       if (cfs && cfs.length > 0) setCustomFields(cfs);
 
       if (projs.length > 0) {
@@ -559,7 +568,7 @@ export default function App() {
             baseUrl={config.baseUrl}
             statuses={statuses}
             trackers={trackers}
-            priorities={priorities}
+            priorities={[...new Map([...priorities, ...issues.map(i => i.priority)].filter(Boolean).map(p => [p.id || p.name, p])).values()]}
             customFields={customFields}
             categories={categories}
             versions={versions}

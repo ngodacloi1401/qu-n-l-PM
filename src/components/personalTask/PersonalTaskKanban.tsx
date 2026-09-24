@@ -179,10 +179,14 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                         {task.title}
                       </h5>
 
-                      {/* Week & Assignee */}
+                      {/* Project / Week & Assignee */}
                       <div className="flex items-center justify-between text-[10px] text-slate-500 mb-2">
-                        <span className="truncate max-w-[130px] font-medium">{task.week}</span>
-                        {task.assigneeName && <span>{task.assigneeName}</span>}
+                        <span className="truncate max-w-[150px] font-medium text-slate-600">
+                          {task.source === 'redmine'
+                            ? (task.projectName || task.category || '')
+                            : (task.week || task.projectName || task.category || '')}
+                        </span>
+                        {task.assigneeName && <span className="truncate max-w-[100px]">{task.assigneeName}</span>}
                       </div>
 
                       {/* Result Note if present */}
