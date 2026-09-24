@@ -764,6 +764,8 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
             switchTab('redmine');
           }}
           existingTaskRedmineIds={new Set(tasks.map((t) => t.redmineIssueId).filter((id): id is number => typeof id === 'number'))}
+          selectedProjectId={selectedProjectId}
+          projects={projects}
         />
       )}
     </div>

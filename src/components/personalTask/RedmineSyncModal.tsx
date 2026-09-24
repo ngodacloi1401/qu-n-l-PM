@@ -11,6 +11,8 @@ interface RedmineSyncModalProps {
   onClose: () => void;
   onImport: (newTasks: PersonalTask[]) => void;
   existingTaskRedmineIds: Set<number>;
+  selectedProjectId?: string;
+  projects?: Array<{ id: number; name: string }>;
 }
 
 export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
@@ -20,6 +22,8 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
   onClose,
   onImport,
   existingTaskRedmineIds,
+  selectedProjectId,
+  projects = [],
 }) => {
   const [search, setSearch] = useState('');
   const [onlyMine, setOnlyMine] = useState(true);
@@ -28,16 +32,26 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
   const [isLoadingRemote, setIsLoadingRemote] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
 
-  // Fetch issues assigned to me directly from Redmine using current user credentials
+  // Current project name
+  const currentProject = useMemo(() => {
+    if (!selectedProjectId || selectedProjectId === 'all') return null;
+    return projects.find((p) => String(p.id) === String(selectedProjectId)) || null;
+  }, [selectedProjectId, projects]);
+
+  // Fetch issues assigned to me directly from Redmine using current user credentials, scoped by project if selected
   const fetchMyIssues = useCallback(async () => {
     setIsLoadingRemote(true);
     setRemoteError(null);
     try {
-      const res = await getIssues({
+      const params: any = {
         assigned_to_id: currentUser ? currentUser.id : 'me',
         status_id: '*',
         limit: 100,
-      });
+      };
+      if (selectedProjectId && selectedProjectId !== 'all') {
+        params.project_id = selectedProjectId;
+      }
+      const res = await getIssues(params);
       if (res && Array.isArray(res.issues)) {
         setRemoteIssues(res.issues);
       }
@@ -47,7 +61,7 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
     } finally {
       setIsLoadingRemote(false);
     }
-  }, [currentUser]);
+  }, [currentUser, selectedProjectId]);
 
   useEffect(() => {
     fetchMyIssues();
@@ -73,6 +87,12 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
 
   const availableIssues = useMemo(() => {
     return allIssues.filter((iss) => {
+      // Filter by selected project if specified
+      if (selectedProjectId && selectedProjectId !== 'all') {
+        const matchesId = iss.project?.id && String(iss.project.id) === String(selectedProjectId);
+        const matchesName = currentProject && iss.project?.name && iss.project.name.toLowerCase() === currentProject.name.toLowerCase();
+        if (!matchesId && !matchesName) return false;
+      }
       if (onlyMine && currentUser) {
         if (iss.assigned_to?.id !== currentUser.id) return false;
       }
@@ -85,7 +105,7 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
       }
       return true;
     });
-  }, [allIssues, currentUser, onlyMine, search]);
+  }, [allIssues, currentUser, onlyMine, search, selectedProjectId, currentProject]);
 
   const toggleSelect = (id: number) => {
     const next = new Set(selectedIds);
@@ -161,12 +181,17 @@ export const RedmineSyncModal: React.FC<RedmineSyncModalProps> = ({
               <ArrowDownToLine className="w-4 h-4" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-base font-bold text-slate-900">Kéo công việc từ Redmine sang việc cá nhân</h3>
                 {currentUser && (
                   <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-red-50 text-red-700 border border-red-200 flex items-center gap-1">
                     <User className="w-3 h-3" />
                     <span>{currentUserName || currentUser.login}</span>
+                  </span>
+                )}
+                {currentProject && (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                    📁 <span>{currentProject.name}</span>
                   </span>
                 )}
               </div>
