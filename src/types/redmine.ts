@@ -156,7 +156,7 @@ export interface RedmineConfig {
   apiKey: string;
 }
 
-export type ViewMode = 'kanban' | 'list' | 'analytics' | 'time' | 'ot' | 'ai';
+export type ViewMode = 'kanban' | 'list' | 'analytics' | 'time' | 'ot' | 'ai' | 'personal';
 
 export type TimePeriodType =
   | 'all'

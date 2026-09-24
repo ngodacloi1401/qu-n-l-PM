@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Building2,
   Lock,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { RedmineProject, RedmineUser, ViewMode } from '../types/redmine';
 
@@ -186,6 +187,21 @@ export const Header: React.FC<HeaderProps> = ({
         {/* View Navigation Tabs */}
         <div className="flex items-center justify-between border-t border-slate-100 -mb-px overflow-x-auto no-scrollbar">
           <nav className="flex space-x-1 sm:space-x-4 py-2">
+            <button
+              id="tab-personal"
+              onClick={() => onSelectView('personal')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                activeView === 'personal'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-xs'
+                  : 'text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/50'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <span>Việc cá nhân (Excel)</span>
+              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+                Mới
+              </span>
+            </button>
             <button
               id="tab-kanban"
               onClick={() => onSelectView('kanban')}

@@ -44,6 +44,7 @@ import { AICopilotView } from './components/AICopilotView';
 import { IssueDetailModal } from './components/IssueDetailModal';
 import { CreateIssueModal } from './components/CreateIssueModal';
 import { SettingsModal } from './components/SettingsModal';
+import { PersonalTaskView } from './components/personalTask/PersonalTaskView';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { isIssueClosed, vietnamToday } from './services/pmAnalytics';
 
@@ -551,6 +552,14 @@ export default function App() {
         )}
 
         {/* View Switcher */}
+        {activeView === 'personal' && (
+          <PersonalTaskView
+            redmineIssues={issues}
+            currentUser={currentUser}
+            baseUrl={config.baseUrl}
+          />
+        )}
+
         {activeView === 'kanban' && (
           <KanbanBoard
             issues={filteredIssues}
