@@ -37,6 +37,7 @@ export interface PersonalTask {
 }
 
 export interface ExcelColumnMapping {
+  projectCol?: number;
   weekCol: number;
   assignedDateCol: number;
   categoryCol: number;
@@ -51,6 +52,7 @@ export interface ExcelColumnMapping {
   trackerCol?: number;
   parentTaskCol?: number;
   doneRatioCol?: number;
+  redmineIdCol?: number;
 }
 
 export interface ExcelParsedSheet {

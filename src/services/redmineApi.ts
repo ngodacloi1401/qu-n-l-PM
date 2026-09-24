@@ -70,10 +70,14 @@ export const DEFAULT_REDMINE_TRACKERS: RedmineTracker[] = [
 ];
 
 export const DEFAULT_REDMINE_PRIORITIES: RedminePriority[] = [
-  { id: 29, name: 'Must Have', is_default: true },
-  { id: 30, name: 'Should Have', is_default: false },
-  { id: 31, name: 'Could Have', is_default: false },
-  { id: 32, name: "Won't Have", is_default: false },
+  { id: 9, name: 'Immediate', is_default: false },
+  { id: 8, name: 'Urgent', is_default: false },
+  { id: 7, name: 'High', is_default: false },
+  { id: 6, name: 'Normal', is_default: true },
+  { id: 5, name: 'Low', is_default: false },
+
+
+
 ];
 
 export const DEFAULT_REDMINE_CUSTOM_FIELDS: RedmineCustomField[] = [
