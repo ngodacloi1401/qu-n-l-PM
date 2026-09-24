@@ -536,6 +536,7 @@ export async function getIssueDetail(id: number): Promise<RedmineIssue> {
 export async function createIssue(issuePayload: {
   project_id: number;
   tracker_id: number;
+  status_id?: number;
   subject: string;
   description?: string;
   priority_id?: number;

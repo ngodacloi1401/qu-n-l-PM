@@ -98,11 +98,11 @@ test('convertRowsToTasks converts parsed matrix into PersonalTask array', () => 
   assert.equal(tasks.length, 2);
   assert.equal(tasks[0].title, 'Xem lại template standard');
   assert.equal(tasks[0].category, 'Platform');
-  assert.equal(tasks[0].priority, 'urgent');
-  assert.equal(tasks[0].status, 'in_progress');
+  assert.equal(tasks[0].priorityName, 'Urgent');
+  assert.equal(tasks[0].statusName, 'In Progress');
   assert.equal(tasks[0].dueDate, '2026-02-27');
 
   assert.equal(tasks[1].title, 'Fix lỗi dropdown');
-  assert.equal(tasks[1].status, 'done');
+  assert.equal(tasks[1].statusName, 'Closed');
   assert.equal(tasks[1].dueDate, '2026-03-04');
 });

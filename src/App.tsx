@@ -116,7 +116,7 @@ export default function App() {
   const fetchRequestIdRef = useRef<number>(0);
   const filterRequestIdRef = useRef<number>(0);
   const lastLoadedProjectIdRef = useRef<string | null>(null);
-  const needsProjectIssues = activeView === 'kanban' || activeView === 'list' || activeView === 'analytics' || activeView === 'ai';
+  const needsProjectIssues = activeView === 'kanban' || activeView === 'list' || activeView === 'analytics' || activeView === 'ai' || activeView === 'personal';
 
   // Initial load of global Redmine metadata
   const loadInitialData = useCallback(async () => {

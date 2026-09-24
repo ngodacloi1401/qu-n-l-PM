@@ -15,6 +15,7 @@ import {
   Flame,
   Layers,
   RotateCcw,
+  User,
 } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import type {
@@ -34,8 +35,15 @@ import {
   DEFAULT_REDMINE_PRIORITIES,
   DEFAULT_REDMINE_TRACKERS,
   DEFAULT_REDMINE_CUSTOM_FIELDS,
+  getStoredConfig,
 } from '../../services/redmineApi';
-import { getSavedTasks, saveTasks, INITIAL_SAMPLE_TASKS } from '../../services/personalTaskStorage';
+import {
+  getSavedTasks,
+  saveTasks,
+  getUserScopeKey,
+  getInitialSampleTasks,
+  INITIAL_SAMPLE_TASKS,
+} from '../../services/personalTaskStorage';
 import { exportPersonalTasksToExcel } from '../../services/personalTaskExcel';
 import { PersonalTaskTable } from './PersonalTaskTable';
 import { PersonalTaskKanban } from './PersonalTaskKanban';
@@ -72,8 +80,27 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   projects = [],
   selectedProjectId,
 }) => {
-  const [tasks, setTasks] = useState<PersonalTask[]>(() => getSavedTasks());
+  // Redmine user display name and scope key for storage isolation
+  const currentUserName = currentUser
+    ? `${currentUser.firstname} ${currentUser.lastname}`.trim() || currentUser.login
+    : '';
+  const currentApiKey = useMemo(() => getStoredConfig().apiKey, []);
+  const userScopeKey = useMemo(
+    () => getUserScopeKey(currentUser, currentApiKey),
+    [currentUser, currentApiKey]
+  );
+
+  const [tasks, setTasks] = useState<PersonalTask[]>(() =>
+    getSavedTasks(userScopeKey, currentUserName)
+  );
   const [subView, setSubView] = useState<'table' | 'kanban'>('table');
+
+  // Reload tasks when user or scope changes
+  useEffect(() => {
+    const freshApiKey = getStoredConfig().apiKey;
+    const freshScopeKey = getUserScopeKey(currentUser, freshApiKey);
+    setTasks(getSavedTasks(freshScopeKey, currentUserName));
+  }, [userScopeKey, currentUserName, currentUser]);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -90,10 +117,10 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   const [showRedmineSyncModal, setShowRedmineSyncModal] = useState(false);
   const [editingTask, setEditingTask] = useState<PersonalTask | null>(null);
 
-  // Save changes to localStorage whenever tasks change
+  // Save changes to localStorage whenever tasks change (scoped by user account)
   useEffect(() => {
-    saveTasks(tasks);
-  }, [tasks]);
+    saveTasks(tasks, userScopeKey);
+  }, [tasks, userScopeKey]);
 
   // Unique weeks and categories for filter dropdowns
   const availableWeeks = useMemo(() => {
@@ -155,7 +182,9 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
 
   const handleResetSampleData = () => {
     if (confirm('Khôi phục danh sách dữ liệu mẫu chuẩn Redmine ban đầu?')) {
-      setTasks(INITIAL_SAMPLE_TASKS);
+      const sample = getInitialSampleTasks(currentUserName);
+      setTasks(sample);
+      saveTasks(sample, userScopeKey);
     }
   };
 
@@ -208,6 +237,40 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
 
   return (
     <div className="space-y-5">
+      {/* User Account Scope Indicator Banner */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-3 border border-slate-800">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 font-bold text-sm">
+            {currentUser?.firstname ? currentUser.firstname.charAt(0).toUpperCase() : 'U'}
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-slate-300">Việc cá nhân của:</span>
+              <span className="text-xs font-bold text-white tracking-wide">
+                {currentUserName || currentUser?.login || 'Người dùng Redmine'}
+              </span>
+              {currentUser?.id && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-500/30 text-indigo-300 border border-indigo-400/30 font-semibold">
+                  Redmine #{currentUser.id}
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Dữ liệu được lưu độc lập theo tài khoản Redmine / API Key hiện tại
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowRedmineSyncModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+          >
+            <ArrowDownToLine className="w-3.5 h-3.5" />
+            <span>Lấy việc gán cho tôi từ Redmine</span>
+          </button>
+        </div>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {/* Total */}
@@ -521,6 +584,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           versions={versions}
           memberships={memberships}
           projects={projects}
+          currentUser={currentUser}
           onClose={() => {
             setShowCreateModal(false);
             setEditingTask(null);

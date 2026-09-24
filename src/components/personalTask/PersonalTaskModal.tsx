@@ -10,6 +10,7 @@ import type {
   RedmineVersion,
   RedmineMembership,
   RedmineProject,
+  RedmineUser,
 } from '../../types/redmine';
 import {
   DEFAULT_REDMINE_STATUSES,
@@ -30,6 +31,7 @@ interface PersonalTaskModalProps {
   versions?: RedmineVersion[];
   memberships?: RedmineMembership[];
   projects?: RedmineProject[];
+  currentUser?: RedmineUser | null;
   onClose: () => void;
   onSave: (task: PersonalTask) => void;
   onDelete?: (id: string) => void;
@@ -47,6 +49,7 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
   versions = [],
   memberships = [],
   projects = [],
+  currentUser,
   onClose,
   onSave,
   onDelete,
@@ -55,12 +58,15 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
   const initialTrackerId = task?.trackerId || trackers[0]?.id || 6;
   const [trackerId, setTrackerId] = useState<number>(initialTrackerId);
 
+  // Compute current logged in user name
+  const currentUserName = currentUser ? `${currentUser.firstname} ${currentUser.lastname}`.trim() || currentUser.login : '';
+
   // Standard Redmine fields
   const [title, setTitle] = useState(task?.title || '');
   const [description, setDescription] = useState(task?.description || '');
   const [statusName, setStatusName] = useState<string>(task?.statusName || statuses[0]?.name || 'New');
   const [priorityName, setPriorityName] = useState<string>(task?.priorityName || priorities[0]?.name || 'Normal');
-  const [assigneeName, setAssigneeName] = useState<string>(task?.assigneeName || 'Ngô Đắc Lợi');
+  const [assigneeName, setAssigneeName] = useState<string>(task?.assigneeName || currentUserName || '');
   const [category, setCategory] = useState<string>(task?.category || 'CAD ADDIN SHOP DRAWING');
   const [targetVersionName, setTargetVersionName] = useState<string>(task?.targetVersionName || '');
   const [parentTaskId, setParentTaskId] = useState<string>(task?.parentTaskId ? String(task.parentTaskId) : '');
@@ -119,6 +125,7 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
       statusName,
       priorityId: matchedPriority?.id,
       priorityName,
+      assigneeId: task?.assigneeId || (assigneeName === currentUserName ? currentUser?.id : undefined),
       assigneeName: assigneeName.trim(),
       parentTaskId: parentTaskId.trim() ? Number(parentTaskId) || parentTaskId.trim() : undefined,
       targetVersionName: targetVersionName.trim() || undefined,
@@ -292,7 +299,7 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
                   list="assignees-datalist"
                   value={assigneeName}
                   onChange={(e) => setAssigneeName(e.target.value)}
-                  placeholder="Ngô Đắc Lợi"
+                  placeholder={currentUserName || 'Người nhận việc'}
                   className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl text-slate-800"
                 />
                 <datalist id="assignees-datalist">
