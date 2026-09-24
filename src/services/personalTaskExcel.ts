@@ -118,7 +118,22 @@ export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
 export async function parseExcelWorkbook(fileBuffer: ArrayBuffer): Promise<ExcelParsedSheet[]> {
   const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(fileBuffer);
+  try {
+    await workbook.xlsx.load(fileBuffer);
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg.includes('sheets') || msg.includes('undefined')) {
+      throw new Error(
+        'Không thể đọc file Excel. File có thể ở định dạng không tương thích (.xls cũ, hoặc xuất từ Google Sheets/WPS). ' +
+        'Hãy mở file bằng Microsoft Excel rồi "Save As" lại dạng .xlsx, sau đó thử import lại.'
+      );
+    }
+    throw new Error(`Lỗi khi đọc file Excel: ${msg}`);
+  }
+
+  if (!workbook.worksheets || workbook.worksheets.length === 0) {
+    throw new Error('File Excel không chứa sheet nào hoặc định dạng không hợp lệ. Vui lòng dùng file .xlsx chuẩn.');
+  }
 
   const sheets: ExcelParsedSheet[] = [];
 
