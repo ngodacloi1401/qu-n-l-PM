@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, X, ArrowRight, Table2 } from 'lucide-react';
+import { Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, X, ArrowRight, Table2, Download } from 'lucide-react';
 import type { ExcelParsedSheet, ExcelColumnMapping, PersonalTask } from '../../types/personalTask';
-import { parseExcelWorkbook, autoDetectMapping, convertRowsToTasks } from '../../services/personalTaskExcel';
+import { parseExcelWorkbook, autoDetectMapping, convertRowsToTasks, downloadExcelTemplate } from '../../services/personalTaskExcel';
 
 interface ExcelImportModalProps {
   onClose: () => void;
@@ -149,6 +149,20 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
               >
                 Chọn file từ máy tính
               </button>
+
+              <div className="mt-5 pt-4 border-t border-slate-200 w-full flex justify-center">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    downloadExcelTemplate();
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Tải file mẫu (Template Excel)</span>
+                </button>
+              </div>
             </div>
           ) : (
             /* Mapping step */

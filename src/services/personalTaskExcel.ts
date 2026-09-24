@@ -416,3 +416,94 @@ export async function exportPersonalTasksToExcel(tasks: PersonalTask[], filename
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Download an empty Excel template with predefined headers
+ * matching the expected import format for personal tasks.
+ */
+export async function downloadExcelTemplate() {
+  const { default: ExcelJS } = await import('exceljs');
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Redmine PM Workspace';
+  workbook.created = new Date();
+
+  const ws = workbook.addWorksheet('Kế hoạch đầu việc');
+
+  const headers = [
+    'Tuần',
+    'Ngày bắt đầu',
+    'Tracker',
+    'Nhóm việc / Dự án',
+    'Tên việc cần làm',
+    'Mô tả chi tiết',
+    'Mức độ ưu tiên (Priority)',
+    'Thời lượng (giờ)',
+    '% Hoàn thành',
+    'Trạng thái (Status)',
+    'Kết quả công việc / Ghi chú',
+    'Hạn chót (Deadline)',
+    'Task cha',
+    'Lý do trễ hạn',
+  ];
+
+  const headerRow = ws.addRow(headers);
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+  headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  headerRow.height = 32;
+
+  // Add a sample row to guide users
+  ws.addRow([
+    'Tuần 01 (01/01-05/01)',
+    '2025-01-01',
+    'Task',
+    'Platform',
+    'Ví dụ: Làm tính năng ABC',
+    'Mô tả chi tiết công việc cần làm',
+    'Normal',
+    '8',
+    '0%',
+    'New',
+    '',
+    '2025-01-05',
+    '',
+    '',
+  ]);
+
+  // Add notes explaining valid values
+  const noteRow = ws.addRow([
+    '(Xóa 2 dòng này khi dùng)',
+    '',
+    'Bug / Task / Feature / User Story / Sub-Task',
+    '',
+    '',
+    '',
+    'Low / Normal / High / Urgent / Immediate',
+    '',
+    '0-100',
+    'New / In Progress / Resolved / Feedback / Closed / QA testing / Ready For QA / QA Verified / Pending / Rejected',
+    '',
+    'YYYY-MM-DD hoặc DD/MM/YYYY',
+    '#ID',
+    '',
+  ]);
+  noteRow.font = { italic: true, color: { argb: 'FF6B7280' }, size: 9 };
+
+  ws.columns = [
+    { width: 24 }, { width: 14 }, { width: 14 }, { width: 20 },
+    { width: 35 }, { width: 40 }, { width: 20 }, { width: 14 },
+    { width: 14 }, { width: 20 }, { width: 35 }, { width: 16 },
+    { width: 12 }, { width: 28 },
+  ];
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Template_Ke_hoach_dau_viec.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
