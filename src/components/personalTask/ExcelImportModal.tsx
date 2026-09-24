@@ -18,10 +18,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
   const [customWeek, setCustomWeek] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processFile = async (file: File) => {
     setIsProcessing(true);
     setError(null);
     try {
@@ -44,10 +41,20 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
       const autoMap = autoDetectMapping(parsedSheets[activeIdx].headers);
       setMapping(autoMap);
     } catch (err: any) {
-      console.error(err);
+      console.error('Lỗi khi đọc file Excel:', err);
       setError(err?.message || 'Lỗi khi đọc file Excel');
     } finally {
       setIsProcessing(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
     }
   };
 
@@ -124,8 +131,19 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
           {sheets.length === 0 ? (
             /* Upload step */
             <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-slate-50/70 hover:bg-emerald-50/30 rounded-2xl p-10 text-center cursor-pointer transition-all flex flex-col items-center justify-center group"
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const file = e.dataTransfer.files?.[0];
+                if (file) {
+                  processFile(file);
+                }
+              }}
+              className="border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-slate-50/70 hover:bg-emerald-50/30 rounded-2xl p-10 text-center transition-all flex flex-col items-center justify-center relative overflow-hidden"
             >
               <input
                 ref={fileInputRef}
@@ -134,23 +152,37 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
                 onChange={handleFileChange}
                 className="hidden"
               />
-              <div className="w-16 h-16 rounded-2xl bg-white shadow-sm border border-slate-200 flex items-center justify-center text-emerald-600 group-hover:scale-105 transition-transform mb-4">
+
+              {isProcessing && (
+                <div className="absolute inset-0 bg-white/90 backdrop-blur-xs flex flex-col items-center justify-center z-10 gap-3">
+                  <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-600 rounded-full animate-spin" />
+                  <div className="text-sm font-bold text-slate-800">Đang đọc và phân tích file Excel...</div>
+                  <div className="text-xs text-slate-500">Vui lòng chờ trong giây lát</div>
+                </div>
+              )}
+
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="w-16 h-16 rounded-2xl bg-white shadow-sm border border-slate-200 flex items-center justify-center text-emerald-600 hover:scale-105 transition-transform mb-4 cursor-pointer"
+              >
                 <Upload className="w-8 h-8" />
               </div>
               <h4 className="text-base font-semibold text-slate-800">
-                {isProcessing ? 'Đang đọc và phân tích file Excel...' : 'Kéo thả hoặc bấm để chọn file Excel (.xlsx)'}
+                Kéo thả hoặc bấm nút bên dưới để chọn file Excel (.xlsx, .xls)
               </h4>
               <p className="text-xs text-slate-500 mt-1 max-w-md">
-                Hỗ trợ cả file quản lý công việc theo tuần, kế hoạch tháng của team hoặc cá nhân
+                Hỗ trợ cả file xuất từ Google Sheets, WPS Office, Microsoft Excel hoặc file kế hoạch dự án
               </p>
               <button
                 type="button"
-                className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium shadow-xs transition-colors"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isProcessing}
+                className="mt-4 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-sm font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
               >
                 Chọn file từ máy tính
               </button>
 
-              <div className="mt-5 pt-4 border-t border-slate-200 w-full flex justify-center">
+              <div className="mt-6 pt-4 border-t border-slate-200 w-full flex justify-center">
                 <button
                   type="button"
                   onClick={(e) => {
