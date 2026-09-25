@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Plus, Sparkles, RefreshCw, Bot, MessageSquare, Trash2, Square, Database, Copy, Check, Download, FileText, FileSpreadsheet, Pencil, X } from 'lucide-react';
+import { Send, Plus, Sparkles, RefreshCw, Bot, MessageSquare, Trash2, Square, Database, Copy, Check, Download, FileText, FileSpreadsheet, Pencil, X, KeyRound } from 'lucide-react';
 import type { RedmineIssue, RedmineProject, RedmineStatus } from '../types/redmine';
 import { FALLBACK_AI_MODELS, askAIChat, getAvailableAIModels, getStoredConfig, type AIProvider } from '../services/redmineApi';
 import type { ChatMessage, ChatScope } from '../services/aiPayload';
@@ -53,8 +53,8 @@ const messageTime = (value?: string) => value
   ? new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
   : '';
 
-export function AICopilotView({ issues, statuses, selectedProject, projectId, totalAvailable, isDataLoading, scope }: {
-  issues: RedmineIssue[]; statuses: RedmineStatus[]; selectedProject: RedmineProject | undefined; projectId: string; totalAvailable: number; isDataLoading: boolean; scope: ChatScope;
+export function AICopilotView({ issues, statuses, selectedProject, projectId, totalAvailable, isDataLoading, scope, configRevision, onOpenSettings }: {
+  issues: RedmineIssue[]; statuses: RedmineStatus[]; selectedProject: RedmineProject | undefined; projectId: string; totalAvailable: number; isDataLoading: boolean; scope: ChatScope; configRevision: number; onOpenSettings: () => void;
 }) {
   const [provider, setProvider] = useState<AIProvider>(savedProvider);
   const initialModel = savedModel(savedProvider());
@@ -116,7 +116,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     setModelsSource('fallback');
     localStorage.setItem(PROVIDER_KEY, provider);
     void loadModels(provider, nextModel, !fallback.some(item => item.id === nextModel));
-  }, [provider]);
+  }, [provider, configRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -286,7 +286,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
 
       {(customMode || modelNotice || isDataLoading) && <div className="px-4 sm:px-6 py-2 border-b border-slate-100 bg-slate-50 flex flex-wrap items-center gap-2">
         {customMode && <input aria-label="Mã model AI tùy chỉnh" value={custom} onChange={e => setCustom(e.target.value)} disabled={busy} className="min-w-56 flex-1 max-w-md bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs" placeholder={provider === 'gemini' ? 'vd: gemini-2.5-flash' : provider === 'codex' ? 'vd: gpt-5.3-codex' : provider === 'openai' ? 'vd: gpt-6-astra' : 'vd: claude-sonnet-5'} />}
-        {modelNotice && <span role="status" className="text-xs text-amber-700">{modelNotice}</span>}
+        {modelNotice && <><span role="status" className="text-xs text-amber-700">{modelNotice}</span><button type="button" onClick={onOpenSettings} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-50"><KeyRound className="h-3.5 w-3.5" />Cấu hình API key</button></>}
         {isDataLoading && <span role="status" className="text-xs text-indigo-700 flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5 animate-spin" />Đang chuẩn bị đầy đủ dữ liệu dự án…</span>}
       </div>}
 

@@ -91,6 +91,7 @@ export default function App() {
   const [selectedIssueForModal, setSelectedIssueForModal] = useState<RedmineIssue | null>(null);
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [aiConfigRevision, setAIConfigRevision] = useState(0);
 
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -632,6 +633,8 @@ export default function App() {
             issues={issues}
             scope={{ loadedCount: issues.length }}
             selectedProject={selectedProject}
+            configRevision={aiConfigRevision}
+            onOpenSettings={() => setShowSettingsModal(true)}
           />
         </div>
       </main>
@@ -669,6 +672,7 @@ export default function App() {
         <SettingsModal
           onClose={() => setShowSettingsModal(false)}
           onSaved={() => {
+            setAIConfigRevision(value => value + 1);
             loadInitialData();
             loadProjectData(selectedProjectId, filters);
           }}
