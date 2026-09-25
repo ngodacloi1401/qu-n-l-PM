@@ -40,7 +40,7 @@ export function detectRequestedArtifactKind(text: string): ChatArtifactKind | nu
 }
 export function buildAIChatPayload(messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}, reasoningEffort: ReasoningEffort = 'low') {
   const latest = messages.at(-1)?.text.toLowerCase() ?? '';
-  const references = messages.slice(-8).map(m => m.text).join('\n');
+  const references = messages.slice(-16).map(m => m.text).join('\n');
   const ids = new Set([...references.matchAll(/#?(\d{3,})/g)].map(m => Number(m[1])));
   const stats = calculatePMAnalytics(issues, statuses);
   const important = new Set([...stats.overdueIssues, ...stats.blockedIssues].map(i => i.id));
@@ -55,8 +55,8 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
     return queryTokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
   };
   const sample = [...issues].sort((a, b) => Number(ids.has(b.id)) - Number(ids.has(a.id)) || Number(memberMatch(b)) - Number(memberMatch(a)) || textScore(b) - textScore(a) || Number(important.has(b.id)) - Number(important.has(a.id)) || b.id - a.id);
-  const bounded = buildAIReportPayload('risk', projectName, sample, { totalIssues: stats.total, closedCount: stats.closed, inProgressCount: stats.inProgress, overdueCount: stats.overdueIssues.length, blockedCount: stats.blockedIssues.length }, model);
-  const history = messages.slice(-12).map(m => ({ role: m.role, text: m.text.slice(0, 4000) }));
+  const bounded = buildAIReportPayload('risk', projectName, sample, { totalIssues: stats.total, closedCount: stats.closed, inProgressCount: stats.inProgress, overdueCount: stats.overdueIssues.length, blockedCount: stats.blockedIssues.length }, model, 60);
+  const history = messages.slice(-20).map(m => ({ role: m.role, text: m.text.slice(0, 6000) }));
   while (history.at(0)?.role === 'assistant') history.shift();
   const requestedArtifact = detectRequestedArtifactKind(messages.at(-1)?.text || '');
   if (requestedArtifact && history.at(-1)?.role === 'user') {
@@ -100,8 +100,8 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
 
 // Keep the request small before it crosses Express / hosting body limits.
 // Overall counts still describe all loaded issues; only detail is sampled.
-export function buildAIReportPayload(mode: 'standup' | 'risk' | 'general', projectName: string, issues: RedmineIssue[], statistics: any, model?: string) {
-  const limit = mode === 'risk' ? 35 : mode === 'standup' ? 30 : 20;
+export function buildAIReportPayload(mode: 'standup' | 'risk' | 'general', projectName: string, issues: RedmineIssue[], statistics: any, model?: string, detailLimit?: number) {
+  const limit = detailLimit ?? (mode === 'risk' ? 35 : mode === 'standup' ? 30 : 20);
   const named = (value: { id: number; name: string } | undefined) => value ? { id: value.id, name: value.name.slice(0, 80) } : undefined;
   const stats: Record<string, number | string> = {};
   for (const key of ['totalIssues', 'inProgressCount', 'closedCount', 'overdueCount', 'blockedCount']) {

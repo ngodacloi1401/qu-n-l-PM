@@ -34,6 +34,7 @@ test('Gemini chat carries both turns to the SDK with current context and selecte
     assert.match(JSON.stringify(captured[1].systemInstruction), /Test Project/);
     assert.match(JSON.stringify(captured[1].systemInstruction), /issueRows/);
     assert.equal(captured[1].generationConfig.thinkingConfig.thinkingBudget, 24576);
+    assert.equal(captured[1].generationConfig.maxOutputTokens, 8192);
   } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 
@@ -180,14 +181,14 @@ test('provider chat routes send the full PM prompt to OpenAI and Anthropic', asy
     assert.equal((await anthropic.json()).result, 'Claude đã phân tích dự án.');
 
     assert.equal(captured[0].body.model, 'gpt-5.2');
-    assert.equal(captured[0].body.max_output_tokens, 4096);
+    assert.equal(captured[0].body.max_output_tokens, 8192);
     assert.match(captured[0].body.instructions, /Test Project/);
     assert.equal(captured[0].body.store, false);
     assert.equal(captured[0].body.reasoning.effort, 'high');
     assert.equal(captured[1].body.model, 'gpt-5.3-codex');
     assert.match(captured[1].body.instructions, /issueRows/);
     assert.equal(captured[2].body.model, 'claude-sonnet-5');
-    assert.equal(captured[2].body.max_tokens, 4096);
+    assert.equal(captured[2].body.max_tokens, 8192);
     assert.equal(captured[2].body.output_config.effort, 'high');
     assert.match(captured[2].body.system, /issueRows/);
     assert.equal(captured[2].headers.get('anthropic-version'), '2023-06-01');
