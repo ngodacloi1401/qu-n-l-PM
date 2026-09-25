@@ -358,9 +358,23 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
     let lastError: any = null;
     let responseText = '';
     let resolvedModel = primaryModel;
+    let streamStarted = false;
+    const wantsStream = !!chat && req.headers['x-ai-stream'] === '1';
 
     for (const candidate of candidateModels) {
       try {
+        if (wantsStream) {
+          const stream: any = await ai.models.generateContentStream({ model: candidate, contents: chat!.contents, config: { systemInstruction: chat!.systemInstruction, maxOutputTokens: 4096 } });
+          streamStarted = true;
+          res.status(200).set({ 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
+          res.flushHeaders?.();
+          for await (const chunk of stream) {
+            if (typeof chunk?.text === 'string' && chunk.text) { responseText += chunk.text; res.write(`${JSON.stringify({ type: 'delta', delta: chunk.text })}\n`); }
+          }
+          if (!responseText.trim()) throw Object.assign(new Error('Gemini không trả về nội dung văn bản.'), { status: 502 });
+          res.write(`${JSON.stringify({ type: 'done', usedModel: candidate, requestedModel: primaryModel, fallbackOccurred: candidate !== primaryModel })}\n`);
+          return res.end();
+        }
         const generatePromise = ai.models.generateContent({
           model: candidate,
           contents: chat ? chat.contents : prompt,
@@ -374,6 +388,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
         }
       } catch (err: any) {
         lastError = err;
+        if (streamStarted) { res.write(`${JSON.stringify({ type: 'error', error: geminiErrorResponse(err).error })}\n`); return res.end(); }
         if (![400, 404].includes(Number(err?.status || err?.code))) break;
       }
     }

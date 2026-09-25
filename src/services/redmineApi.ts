@@ -910,7 +910,7 @@ export async function askAIChat(provider: AIProvider, messages: ChatMessage[], p
   const payload = { ...buildAIChatPayload(messages, projectName, issues, statuses, totalAvailable, model, scope), provider };
   const url = provider === 'gemini' ? '/api/gemini/pm-insights' : '/api/ai/chat';
   const headers = new Headers(getHeaders());
-  if (provider !== 'gemini' && onStream) headers.set('x-ai-stream', '1');
+  if (onStream) headers.set('x-ai-stream', '1');
   const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload), signal });
   if (res.headers.get('content-type')?.includes('application/x-ndjson')) {
     if (!res.body) throw new Error('Máy chủ AI không trả về luồng dữ liệu.');
