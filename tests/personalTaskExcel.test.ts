@@ -1,6 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { autoDetectMapping, convertRowsToTasks } from '../src/services/personalTaskExcel';
+import * as XLSX from 'xlsx';
+import { autoDetectMapping, convertRowsToTasks, parseExcelWorkbook } from '../src/services/personalTaskExcel';
+
+test('parseExcelWorkbook reads a real xlsx workbook', async () => {
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['Tên việc', 'Tuần', 'Trạng thái'],
+    ['Kiểm tra import', 'Tuần 1', 'New'],
+  ]);
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Kế hoạch');
+  const bytes = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' });
+
+  const parsed = await parseExcelWorkbook(bytes);
+  assert.equal(parsed.length, 1);
+  assert.deepEqual(parsed[0].headers, ['Tên việc', 'Tuần', 'Trạng thái']);
+  assert.equal(parsed[0].rows[0][0], 'Kiểm tra import');
+});
 
 test('autoDetectMapping detects Vietnamese header keywords accurately', () => {
   const headers = [
@@ -98,6 +114,7 @@ test('convertRowsToTasks converts parsed matrix into PersonalTask array', () => 
   assert.equal(tasks.length, 2);
   assert.equal(tasks[0].title, 'Xem lại template standard');
   assert.equal(tasks[0].category, 'Platform');
+  assert.equal(tasks[0].projectName, undefined);
   assert.equal(tasks[0].priorityName, 'Urgent');
   assert.equal(tasks[0].statusName, 'In Progress');
   assert.equal(tasks[0].dueDate, '2026-02-27');
@@ -105,4 +122,25 @@ test('convertRowsToTasks converts parsed matrix into PersonalTask array', () => 
   assert.equal(tasks[1].title, 'Fix lỗi dropdown');
   assert.equal(tasks[1].statusName, 'Closed');
   assert.equal(tasks[1].dueDate, '2026-03-04');
+});
+
+test('convertRowsToTasks only scopes a task when Excel has an explicit Project column', () => {
+  const mapping = {
+    projectCol: 0,
+    weekCol: -1,
+    assignedDateCol: -1,
+    categoryCol: 1,
+    titleCol: 2,
+    descriptionCol: -1,
+    priorityCol: -1,
+    estimatedHoursCol: -1,
+    statusCol: -1,
+    resultNoteCol: -1,
+    dueDateCol: -1,
+    delayReasonCol: -1,
+  };
+
+  const [task] = convertRowsToTasks([['HAWEE BIM', 'Platform', 'Kiểm tra import']], mapping);
+  assert.equal(task.projectName, 'HAWEE BIM');
+  assert.equal(task.category, 'Platform');
 });

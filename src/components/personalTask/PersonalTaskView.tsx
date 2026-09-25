@@ -136,6 +136,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showRedmineSyncModal, setShowRedmineSyncModal] = useState(false);
   const [editingTask, setEditingTask] = useState<PersonalTask | null>(null);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
 
   // Split tasks by source
   const excelTasks = useMemo(() => tasks.filter((t) => t.source === 'excel' || t.source === 'manual'), [tasks]);
@@ -168,7 +169,9 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
     // For Excel tasks: if any tasks have project info, filter by it; otherwise keep all
     const hasAnyProjectInfo = excelTasks.some((t) => t.projectId || t.projectName);
     if (!hasAnyProjectInfo) return excelTasks;
-    return excelTasks.filter(isTaskMatchingProject);
+    // Rows without an explicit Project column are personal tasks and remain
+    // visible in every selected project. Category alone must not hide them.
+    return excelTasks.filter((task) => (!task.projectId && !task.projectName) || isTaskMatchingProject(task));
   }, [excelTasks, selectedProjectId, isTaskMatchingProject]);
 
   const scopedRedmineTasks = useMemo(() => {
@@ -285,6 +288,13 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
     } else {
       setTasks((prev) => [...newTasks, ...prev]);
     }
+    setActiveTab('excel');
+    setSelectedWeek('all');
+    setSelectedCategory('all');
+    setSelectedStatus('all');
+    setSelectedPriority('all');
+    setOverdueOnly(false);
+    setImportNotice(`Đã nhập thành công ${newTasks.length} công việc từ Excel.`);
   };
 
   const handleExportExcel = () => {
@@ -368,6 +378,12 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
 
   return (
     <div className="space-y-5">
+      {importNotice && (
+        <div role="status" aria-live="polite" className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl flex items-center justify-between gap-3 text-sm">
+          <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />{importNotice}</span>
+          <button type="button" onClick={() => setImportNotice(null)} className="text-emerald-700 underline text-xs">Đóng</button>
+        </div>
+      )}
       {/* User Account Scope Indicator Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-3 border border-slate-800">
         <div className="flex items-center gap-3">

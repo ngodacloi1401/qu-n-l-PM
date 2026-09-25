@@ -379,7 +379,9 @@ export function convertRowsToTasks(
       const trackerName = getVal(mapping.trackerCol) || 'Task';
       const rawProject = getVal(mapping.projectCol);
       const category = getVal(mapping.categoryCol) || rawProject || 'Chung';
-      const projectName = rawProject || (category !== 'Chung' ? category : undefined);
+      // A work group/category is not necessarily a Redmine project. Treating it
+      // as one causes newly imported rows to disappear under the project filter.
+      const projectName = rawProject || undefined;
       const description = getVal(mapping.descriptionCol);
       const priorityName = parseRedminePriority(getVal(mapping.priorityCol));
       const estimatedHours = getVal(mapping.estimatedHoursCol);

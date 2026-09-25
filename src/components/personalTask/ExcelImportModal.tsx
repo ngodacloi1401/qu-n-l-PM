@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useId, useState, useRef } from 'react';
 import { Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, X, ArrowRight, Table2, Download } from 'lucide-react';
 import type { ExcelParsedSheet, ExcelColumnMapping, PersonalTask } from '../../types/personalTask';
 import { parseExcelWorkbook, autoDetectMapping, convertRowsToTasks, downloadExcelTemplate } from '../../services/personalTaskExcel';
@@ -10,19 +10,48 @@ interface ExcelImportModalProps {
 
 export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onImport }) => {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sheets, setSheets] = useState<ExcelParsedSheet[]>([]);
   const [selectedSheetIndex, setSelectedSheetIndex] = useState<number>(0);
   const [mapping, setMapping] = useState<ExcelColumnMapping | null>(null);
   const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
   const [customWeek, setCustomWeek] = useState<string>('');
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [selectedFileName, setSelectedFileName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputId = useId();
+
+  const waitForPaint = () => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
 
   const processFile = async (file: File) => {
+    if (isProcessing) return;
+    const lowerName = file.name.toLowerCase();
+    if (!lowerName.endsWith('.xlsx') && !lowerName.endsWith('.xls')) {
+      setError('File không đúng định dạng. Vui lòng chọn file .xlsx hoặc .xls.');
+      return;
+    }
+    if (file.size === 0) {
+      setError('File Excel đang trống (0 byte).');
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setError('File Excel lớn hơn 50 MB. Vui lòng tách file thành các phần nhỏ hơn.');
+      return;
+    }
+
     setIsProcessing(true);
     setError(null);
+    setSelectedFileName(file.name);
+    setProcessingMessage(`Đang đọc “${file.name}”…`);
     try {
+      // Let React paint the loading state before XLSX parsing occupies the main thread.
+      await waitForPaint();
       const buffer = await file.arrayBuffer();
+      setProcessingMessage(`Đã đọc file. Đang phân tích sheet và các cột dữ liệu…`);
+      await waitForPaint();
       const parsedSheets = await parseExcelWorkbook(buffer);
 
       if (parsedSheets.length === 0 || parsedSheets.every((s) => s.rows.length === 0)) {
@@ -42,9 +71,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
       setMapping(autoMap);
     } catch (err: any) {
       console.error('Lỗi khi đọc file Excel:', err);
-      setError(err?.message || 'Lỗi khi đọc file Excel');
+      setError(`Không thể nhập “${file.name}”: ${err?.message || 'Lỗi khi đọc file Excel'}`);
     } finally {
       setIsProcessing(false);
+      setProcessingMessage('');
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -53,6 +83,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Reset immediately so selecting the same file again always fires onChange.
+    e.target.value = '';
     if (file) {
       processFile(file);
     }
@@ -75,7 +107,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
     setMapping({ ...mapping, [field]: colIndex });
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (!currentSheet || !mapping) return;
     if (mapping.titleCol === -1) {
       setError('Vui lòng chọn cột chứa "Tên việc cần làm" để tiến hành nhập.');
@@ -83,6 +115,9 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
     }
 
     try {
+      setError(null);
+      setIsImporting(true);
+      await waitForPaint();
       const tasks = convertRowsToTasks(currentSheet.rows, mapping, customWeek || currentSheet.name);
       if (tasks.length === 0) {
         setError('Không tạo được việc nào từ dữ liệu đã chọn. Hãy kiểm tra cột "Tên việc cần làm".');
@@ -92,6 +127,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
       onClose();
     } catch (err: any) {
       setError(err?.message || 'Có lỗi xảy ra khi nhập dữ liệu');
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -113,6 +150,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
           </div>
           <button
             onClick={onClose}
+            disabled={isProcessing || isImporting}
             className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -122,9 +160,16 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
         {/* Content */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
           {error && (
-            <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm flex items-start gap-2.5">
+            <div role="alert" aria-live="assertive" className="p-3.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm flex items-start gap-2.5">
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-rose-600" />
               <div>{error}</div>
+            </div>
+          )}
+
+          {isImporting && (
+            <div role="status" aria-live="polite" className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-sm flex items-center gap-2.5">
+              <div className="w-5 h-5 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin shrink-0" />
+              Đang chuyển dữ liệu Excel vào bảng công việc…
             </div>
           )}
 
@@ -146,41 +191,40 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
               className="border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-slate-50/70 hover:bg-emerald-50/30 rounded-2xl p-10 text-center transition-all flex flex-col items-center justify-center relative overflow-hidden"
             >
               <input
+                id={fileInputId}
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.xls"
+                accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                 onChange={handleFileChange}
                 className="hidden"
               />
 
               {isProcessing && (
-                <div className="absolute inset-0 bg-white/90 backdrop-blur-xs flex flex-col items-center justify-center z-10 gap-3">
+                <div role="status" aria-live="polite" className="absolute inset-0 bg-white/90 backdrop-blur-xs flex flex-col items-center justify-center z-10 gap-3 p-6">
                   <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-600 rounded-full animate-spin" />
-                  <div className="text-sm font-bold text-slate-800">Đang đọc và phân tích file Excel...</div>
-                  <div className="text-xs text-slate-500">Vui lòng chờ trong giây lát</div>
+                  <div className="text-sm font-bold text-slate-800">{processingMessage || 'Đang xử lý file Excel…'}</div>
+                  <div className="text-xs text-slate-500">File lớn có thể cần thêm thời gian; không đóng cửa sổ này.</div>
                 </div>
               )}
 
-              <div
-                onClick={() => fileInputRef.current?.click()}
+              <label
+                htmlFor={fileInputId}
                 className="w-16 h-16 rounded-2xl bg-white shadow-sm border border-slate-200 flex items-center justify-center text-emerald-600 hover:scale-105 transition-transform mb-4 cursor-pointer"
               >
                 <Upload className="w-8 h-8" />
-              </div>
+              </label>
               <h4 className="text-base font-semibold text-slate-800">
                 Kéo thả hoặc bấm nút bên dưới để chọn file Excel (.xlsx, .xls)
               </h4>
               <p className="text-xs text-slate-500 mt-1 max-w-md">
                 Hỗ trợ cả file xuất từ Google Sheets, WPS Office, Microsoft Excel hoặc file kế hoạch dự án
               </p>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isProcessing}
+              <label
+                htmlFor={fileInputId}
                 className="mt-4 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-sm font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
               >
                 Chọn file từ máy tính
-              </button>
+              </label>
 
               <div className="mt-6 pt-4 border-t border-slate-200 w-full flex justify-center">
                 <button
@@ -203,6 +247,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
               <div className="flex flex-wrap items-center justify-between gap-4 p-3 bg-slate-100/70 rounded-xl border border-slate-200">
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Sheet dữ liệu:</span>
+                  {selectedFileName && <span className="text-xs text-slate-500">{selectedFileName}</span>}
                   <div className="flex gap-2 flex-wrap">
                     {sheets.map((s, idx) => (
                       <button
@@ -481,16 +526,18 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({ onClose, onI
             <div className="flex items-center gap-2">
               <button
                 onClick={onClose}
+                disabled={isImporting}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
               >
                 Hủy bỏ
               </button>
               <button
                 onClick={handleConfirmImport}
-                className="inline-flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                disabled={isImporting}
+                className="inline-flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-60"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Nhập {currentSheet?.rows.length || 0} việc vào bảng</span>
+                <span>{isImporting ? 'Đang nhập dữ liệu…' : `Nhập ${currentSheet?.rows.length || 0} việc vào bảng`}</span>
               </button>
             </div>
           </div>
