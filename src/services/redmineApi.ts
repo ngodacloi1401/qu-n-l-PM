@@ -15,7 +15,7 @@ import {
   DateFieldType,
 } from '../types/redmine';
 
-import { buildAIReportPayload, buildAIChatPayload, readAIReportResponse, type ChatMessage, type ChatScope } from './aiPayload';
+import { buildAIReportPayload, buildAIChatPayload, readAIReportResponse, type ChatMessage, type ChatScope, type ReasoningEffort } from './aiPayload';
 import { readIssueListResponse } from './issueResponse';
 import { cacheScope, cacheRevision, invalidateAfterMutation, readLocalCache, writeLocalCache } from './localCache';
 import { loadIssueSnapshot, issueQueryKey, IssueCacheOptions, IssueSnapshot } from './issueCache';
@@ -906,8 +906,8 @@ export interface GeminiPMResponse {
 
 export type AIPMResponse = GeminiPMResponse;
 
-export async function askAIChat(provider: AIProvider, messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}, signal?: AbortSignal, onStream?: (text: string) => void): Promise<AIPMResponse> {
-  const payload = { ...buildAIChatPayload(messages, projectName, issues, statuses, totalAvailable, model, scope), provider };
+export async function askAIChat(provider: AIProvider, messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}, signal?: AbortSignal, onStream?: (text: string) => void, reasoningEffort: ReasoningEffort = 'low'): Promise<AIPMResponse> {
+  const payload = { ...buildAIChatPayload(messages, projectName, issues, statuses, totalAvailable, model, scope, reasoningEffort), provider };
   const url = provider === 'gemini' ? '/api/gemini/pm-insights' : '/api/ai/chat';
   const headers = new Headers(getHeaders());
   if (onStream) headers.set('x-ai-stream', '1');

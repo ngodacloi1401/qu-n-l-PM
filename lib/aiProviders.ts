@@ -1,4 +1,5 @@
 export type AIProvider = 'openai' | 'codex' | 'anthropic';
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high';
 
 export interface ProviderModel {
   id: string;
@@ -94,11 +95,27 @@ async function readEventStream(response: Response, onEvent: (event: any) => void
   }
 }
 
-export async function streamOpenAIResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, onText: (delta: string) => void, onReady?: () => void) {
+function openAIReasoning(model: string, effort: ReasoningEffort) {
+  return /^(?:gpt-[5-9]|o\d)|codex/i.test(model) ? { reasoning: { effort } } : {};
+}
+
+function anthropicEffort(model: string, effort: ReasoningEffort) {
+  const supportsEffort = /claude-(?:sonnet-(?:4-6|[5-9])|opus-(?:4-[5-9]|[5-9])|fable|mythos)/i.test(model);
+  return supportsEffort ? { output_config: { effort: effort === 'minimal' ? 'low' : effort } } : {};
+}
+
+function effortInstruction(effort: ReasoningEffort) {
+  if (effort === 'minimal') return 'Ưu tiên phản hồi nhanh, trực tiếp và ngắn gọn.';
+  if (effort === 'low') return 'Suy luận vừa đủ, ưu tiên tốc độ và câu trả lời rõ ràng.';
+  if (effort === 'high') return 'Phân tích kỹ dữ liệu, kiểm tra các mâu thuẫn và giải thích kết luận đầy đủ.';
+  return 'Cân bằng độ sâu phân tích, độ chính xác và tốc độ phản hồi.';
+}
+
+export async function streamOpenAIResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, onText: (delta: string) => void, onReady?: () => void, effort: ReasoningEffort = 'low') {
   const response = await fetchAI('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, instructions: systemInstruction, input: messages, max_output_tokens: 4096, store: false, stream: true }),
+    body: JSON.stringify({ model, instructions: `${systemInstruction}\n\n${effortInstruction(effort)}`, input: messages, max_output_tokens: 4096, store: false, stream: true, ...openAIReasoning(model, effort) }),
   });
   if (!response.ok) {
     const data: any = await response.json().catch(() => ({}));
@@ -114,11 +131,11 @@ export async function streamOpenAIResponse(apiKey: string, model: string, system
   return text;
 }
 
-export async function streamAnthropicResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, onText: (delta: string) => void, onReady?: () => void) {
+export async function streamAnthropicResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, onText: (delta: string) => void, onReady?: () => void, effort: ReasoningEffort = 'low') {
   const response = await fetchAI('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, system: systemInstruction, messages, max_tokens: 4096, stream: true }),
+    body: JSON.stringify({ model, system: `${systemInstruction}\n\n${effortInstruction(effort)}`, messages, max_tokens: 4096, stream: true, ...anthropicEffort(model, effort) }),
   });
   if (!response.ok) {
     const data: any = await response.json().catch(() => ({}));
@@ -135,11 +152,11 @@ export async function streamAnthropicResponse(apiKey: string, model: string, sys
   return text;
 }
 
-export async function generateOpenAIResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>) {
+export async function generateOpenAIResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, effort: ReasoningEffort = 'low') {
   const response = await fetchAI('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, instructions: systemInstruction, input: messages, max_output_tokens: 4096, store: false }),
+    body: JSON.stringify({ model, instructions: `${systemInstruction}\n\n${effortInstruction(effort)}`, input: messages, max_output_tokens: 4096, store: false, ...openAIReasoning(model, effort) }),
   });
   const data: any = await response.json().catch(() => ({}));
   if (!response.ok) throw responseError('openai', response, data?.error?.message);
@@ -150,11 +167,11 @@ export async function generateOpenAIResponse(apiKey: string, model: string, syst
   return text;
 }
 
-export async function generateAnthropicResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>) {
+export async function generateAnthropicResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, effort: ReasoningEffort = 'low') {
   const response = await fetchAI('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, system: systemInstruction, messages, max_tokens: 4096 }),
+    body: JSON.stringify({ model, system: `${systemInstruction}\n\n${effortInstruction(effort)}`, messages, max_tokens: 4096, ...anthropicEffort(model, effort) }),
   });
   const data: any = await response.json().catch(() => ({}));
   if (!response.ok) throw responseError('anthropic', response, data?.error?.message);

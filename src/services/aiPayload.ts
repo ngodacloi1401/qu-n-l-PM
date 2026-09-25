@@ -12,6 +12,7 @@ export interface ChatArtifact {
 }
 export interface ChatMessage { role: 'user' | 'assistant'; text: string; model?: string; artifacts?: ChatArtifact[]; createdAt?: string }
 export interface ChatScope { loadedCount?: number; availableModels?: string[] }
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high';
 export type GoogleWorkspaceTarget = { kind: 'docs' | 'sheets' | 'slides' | 'forms'; name: string; url: string };
 const normalizeRequest = (text: string) => text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
 export function detectGoogleWorkspaceCreate(text: string): GoogleWorkspaceTarget | null {
@@ -37,7 +38,7 @@ export function detectRequestedArtifactKind(text: string): ChatArtifactKind | nu
   if (/\b(docx|word|google docs?|gg docs?|file|tep)\b/.test(normalized)) return 'docx';
   return null;
 }
-export function buildAIChatPayload(messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}) {
+export function buildAIChatPayload(messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}, reasoningEffort: ReasoningEffort = 'low') {
   const latest = messages.at(-1)?.text.toLowerCase() ?? '';
   const references = messages.slice(-8).map(m => m.text).join('\n');
   const ids = new Set([...references.matchAll(/#?(\d{3,})/g)].map(m => Number(m[1])));
@@ -86,7 +87,7 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
     trackers: breakdown(i => i.tracker), priorities: breakdown(i => i.priority), projects: breakdown(i => i.project),
     workload: stats.workloadAll.map(row => ({ ...row, name: row.name.slice(0, 80) })),
   };
-  const payload = { ...bounded, mode: 'chat', messages: history, context };
+  const payload = { ...bounded, mode: 'chat', messages: history, context, reasoningEffort };
   const bytes = () => new TextEncoder().encode(JSON.stringify(payload)).byteLength;
   if (bytes() > 700_000) context.issueRows = compactRows(80);
   if (bytes() > 850_000) context.issueRows = compactRows(0);

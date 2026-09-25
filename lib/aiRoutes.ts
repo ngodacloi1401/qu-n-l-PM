@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import { createPMChatPrompt } from './geminiChat.js';
-import { generateAnthropicResponse, generateOpenAIResponse, listAnthropicModels, listOpenAICodexModels, listOpenAIModels, streamAnthropicResponse, streamOpenAIResponse, type AIProvider } from './aiProviders.js';
+import { generateAnthropicResponse, generateOpenAIResponse, listAnthropicModels, listOpenAICodexModels, listOpenAIModels, streamAnthropicResponse, streamOpenAIResponse, type AIProvider, type ReasoningEffort } from './aiProviders.js';
 
 function providerKey(req: Request, provider: AIProvider) {
   if (provider === 'openai' || provider === 'codex') return ((req.headers['x-openai-api-key'] as string | undefined)?.trim() || process.env.OPENAI_API_KEY || '').trim();
@@ -13,6 +13,10 @@ function providerLabel(provider: AIProvider) {
 
 function parseProvider(value: unknown): AIProvider | undefined {
   return value === 'openai' || value === 'codex' || value === 'anthropic' ? value : undefined;
+}
+
+function parseReasoningEffort(value: unknown): ReasoningEffort {
+  return value === 'minimal' || value === 'medium' || value === 'high' ? value : 'low';
 }
 
 export function registerProviderAIRoutes(app: Express) {
@@ -39,6 +43,7 @@ export function registerProviderAIRoutes(app: Express) {
     catch (error: any) { return res.status(400).json({ error: error.message }); }
 
     const primaryModel = typeof req.body?.model === 'string' && req.body.model.trim() ? req.body.model.trim() : (provider === 'codex' ? 'gpt-5.3-codex' : provider === 'openai' ? 'gpt-5.6-terra' : 'claude-sonnet-4-6');
+    const reasoningEffort = parseReasoningEffort(req.body?.reasoningEffort);
     const availableModels = Array.isArray(req.body?.context?.availableModels)
       ? req.body.context.availableModels.filter((id: any) => typeof id === 'string' && id.trim()).slice(0, 100)
       : [];
@@ -56,11 +61,11 @@ export function registerProviderAIRoutes(app: Express) {
       try {
         const result = wantsStream
           ? provider === 'anthropic'
-            ? await streamAnthropicResponse(apiKey, candidate, chat.systemInstruction, chat.messages, delta => res.write(`${JSON.stringify({ type: 'delta', delta })}\n`), startStream)
-            : await streamOpenAIResponse(apiKey, candidate, chat.systemInstruction, chat.messages, delta => res.write(`${JSON.stringify({ type: 'delta', delta })}\n`), startStream)
+            ? await streamAnthropicResponse(apiKey, candidate, chat.systemInstruction, chat.messages, delta => res.write(`${JSON.stringify({ type: 'delta', delta })}\n`), startStream, reasoningEffort)
+            : await streamOpenAIResponse(apiKey, candidate, chat.systemInstruction, chat.messages, delta => res.write(`${JSON.stringify({ type: 'delta', delta })}\n`), startStream, reasoningEffort)
           : provider === 'anthropic'
-            ? await generateAnthropicResponse(apiKey, candidate, chat.systemInstruction, chat.messages)
-            : await generateOpenAIResponse(apiKey, candidate, chat.systemInstruction, chat.messages);
+            ? await generateAnthropicResponse(apiKey, candidate, chat.systemInstruction, chat.messages, reasoningEffort)
+            : await generateOpenAIResponse(apiKey, candidate, chat.systemInstruction, chat.messages, reasoningEffort);
         if (wantsStream) {
           startStream();
           res.write(`${JSON.stringify({ type: 'done', usedModel: candidate, requestedModel: primaryModel, fallbackOccurred: candidate !== primaryModel })}\n`);

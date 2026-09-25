@@ -22,7 +22,7 @@ test('Gemini chat carries both turns to the SDK with current context and selecte
   const messages: ChatMessage[] = [{ role: 'user', text: 'Phân tích dự án' }];
   try {
     const send = async () => {
-      const response = await originalFetch(`http://127.0.0.1:${port}/api/gemini/pm-insights`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-gemini-api-key': 'test-only-key' }, body: JSON.stringify(buildAIChatPayload(messages, 'Test Project', [], [], 100, 'gemini-2.5-flash-lite')) });
+      const response = await originalFetch(`http://127.0.0.1:${port}/api/gemini/pm-insights`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-gemini-api-key': 'test-only-key' }, body: JSON.stringify(buildAIChatPayload(messages, 'Test Project', [], [], 100, 'gemini-2.5-flash-lite', {}, 'high')) });
       assert.equal(response.status, 200, await response.clone().text()); return response.json();
     };
     const first = await send(); assert.equal(first.usedModel, 'gemini-2.5-flash-lite');
@@ -33,6 +33,7 @@ test('Gemini chat carries both turns to the SDK with current context and selecte
     assert.equal(captured[1].contents[1].parts[0].text, first.result);
     assert.match(JSON.stringify(captured[1].systemInstruction), /Test Project/);
     assert.match(JSON.stringify(captured[1].systemInstruction), /issueRows/);
+    assert.equal(captured[1].generationConfig.thinkingConfig.thinkingBudget, 24576);
   } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 
@@ -165,7 +166,7 @@ test('provider chat routes send the full PM prompt to OpenAI and Anthropic', asy
   const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as { port: number }).port;
   try {
-    const base = buildAIChatPayload([{ role: 'user', text: 'Tổng hợp toàn bộ dự án' }], 'Test Project', [], [], 0, 'gpt-5.2', { loadedCount: 0 });
+    const base = buildAIChatPayload([{ role: 'user', text: 'Tổng hợp toàn bộ dự án' }], 'Test Project', [], [], 0, 'gpt-5.2', { loadedCount: 0 }, 'high');
     const openAI = await originalFetch(`http://127.0.0.1:${port}/api/ai/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-openai-api-key': 'openai-test' }, body: JSON.stringify({ ...base, provider: 'openai' }) });
     assert.equal(openAI.status, 200, await openAI.clone().text());
     assert.equal((await openAI.json()).result, 'OpenAI đã phân tích dự án.');
@@ -182,10 +183,12 @@ test('provider chat routes send the full PM prompt to OpenAI and Anthropic', asy
     assert.equal(captured[0].body.max_output_tokens, 4096);
     assert.match(captured[0].body.instructions, /Test Project/);
     assert.equal(captured[0].body.store, false);
+    assert.equal(captured[0].body.reasoning.effort, 'high');
     assert.equal(captured[1].body.model, 'gpt-5.3-codex');
     assert.match(captured[1].body.instructions, /issueRows/);
     assert.equal(captured[2].body.model, 'claude-sonnet-5');
     assert.equal(captured[2].body.max_tokens, 4096);
+    assert.equal(captured[2].body.output_config.effort, 'high');
     assert.match(captured[2].body.system, /issueRows/);
     assert.equal(captured[2].headers.get('anthropic-version'), '2023-06-01');
   } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }

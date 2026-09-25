@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Plus, Sparkles, RefreshCw, Bot, MessageSquare, Trash2, Square, Database, Copy, Check, Download, FileText, FileSpreadsheet, Pencil, X, KeyRound } from 'lucide-react';
+import { Send, Plus, Sparkles, RefreshCw, Bot, MessageSquare, Trash2, Square, Database, Copy, Check, Download, FileText, FileSpreadsheet, Pencil, X, KeyRound, Brain } from 'lucide-react';
 import type { RedmineIssue, RedmineProject, RedmineStatus } from '../types/redmine';
 import { FALLBACK_AI_MODELS, askAIChat, getAvailableAIModels, getStoredConfig, type AIProvider } from '../services/redmineApi';
-import { detectGoogleWorkspaceCreate, type ChatMessage, type ChatScope } from '../services/aiPayload';
+import { detectGoogleWorkspaceCreate, type ChatMessage, type ChatScope, type ReasoningEffort } from '../services/aiPayload';
 import { cacheScope, readLocalCache, writeLocalCache } from '../services/localCache';
 import { downloadAnswerAsDocx, downloadChatArtifact, ensureRequestedChatArtifacts } from '../services/chatArtifacts';
 
@@ -32,6 +32,16 @@ const savedModel = (provider: AIProvider) => localStorage.getItem(`redmine_ai_mo
   || (provider === 'gemini' ? localStorage.getItem('redmine_ai_model') : '')
   || FALLBACK_AI_MODELS[provider].find(item => item.isDefault)?.id
   || FALLBACK_AI_MODELS[provider][0].id;
+const EFFORTS: Array<{ id: ReasoningEffort; name: string; description: string }> = [
+  { id: 'minimal', name: 'Tối thiểu', description: 'Phản hồi nhanh nhất' },
+  { id: 'low', name: 'Thấp', description: 'Suy luận nhẹ, ưu tiên tốc độ' },
+  { id: 'medium', name: 'Trung bình', description: 'Cân bằng tốc độ và chất lượng' },
+  { id: 'high', name: 'Cao', description: 'Suy luận sâu nhất' },
+];
+const savedEffort = (provider: AIProvider): ReasoningEffort => {
+  const value = localStorage.getItem(`redmine_ai_effort_${provider}`);
+  return value === 'minimal' || value === 'medium' || value === 'high' ? value : 'low';
+};
 
 const QUICK_PROMPTS = [
   { title: 'Tóm tắt tiến độ', text: 'Tóm tắt tiến độ dự án hiện tại, các việc đang làm và các điểm PM cần chú ý.' },
@@ -77,6 +87,8 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const [downloading, setDownloading] = useState('');
   const [actionNotice, setActionNotice] = useState('');
   const [streamingText, setStreamingText] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(() => savedEffort(savedProvider()));
+  const [effortMenuOpen, setEffortMenuOpen] = useState(false);
   const lock = useRef(false);
   const alive = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
@@ -116,6 +128,8 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     setCustomMode(!fallback.some(item => item.id === nextModel));
     setModelOptions(fallback);
     setModelsSource('fallback');
+    setReasoningEffort(savedEffort(provider));
+    setEffortMenuOpen(false);
     localStorage.setItem(PROVIDER_KEY, provider);
     void loadModels(provider, nextModel, !fallback.some(item => item.id === nextModel));
   }, [provider, configRevision]);
@@ -139,6 +153,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   }, [projectId]);
   useEffect(() => { if (storageKey && store.sessions.length) void writeLocalCache(storageKey, store); }, [storageKey, store]);
   useEffect(() => { if (activeModel) localStorage.setItem(`redmine_ai_model_${provider}`, activeModel); }, [activeModel, provider]);
+  useEffect(() => { localStorage.setItem(`redmine_ai_effort_${provider}`, reasoningEffort); }, [provider, reasoningEffort]);
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'nearest' }); }, [active?.messages.length, busy]);
   useEffect(() => {
     if (!textareaRef.current) return;
@@ -177,7 +192,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     try {
       const response = await askAIChat(provider, messages, selectedProject?.name || 'Tất cả dự án', issues, statuses, totalAvailable, activeModel, { ...scope, availableModels: modelsSource === 'api' ? modelOptions.map(item => item.id) : [] }, controller.signal, partial => {
         if (alive.current) setStreamingText(partial);
-      });
+      }, reasoningEffort);
       if (response.fallbackOccurred && response.usedModel) {
         const option = modelOptions.find(item => item.id === response.usedModel);
         setModel(response.usedModel); setCustomMode(!option); if (!option) setCustom(response.usedModel);
@@ -296,6 +311,12 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
           <select id="ai-model-select" aria-label="Model AI" value={customMode ? 'custom' : model} disabled={busy || modelsLoading} onChange={e => { setCustomMode(e.target.value === 'custom'); if (e.target.value !== 'custom') setModel(e.target.value); }} className="max-w-44 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700">
             {modelOptions.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}<option value="custom">Model khác…</option>
           </select>
+          <div className="relative">
+            <button type="button" aria-label="Mức độ suy luận" aria-expanded={effortMenuOpen} disabled={busy} onClick={() => setEffortMenuOpen(value => !value)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"><Brain className="h-4 w-4 text-violet-600" />Suy luận {EFFORTS.find(item => item.id === reasoningEffort)?.name}</button>
+            {effortMenuOpen && <div className="absolute right-0 top-full z-30 mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
+              {EFFORTS.map(item => <button key={item.id} type="button" onClick={() => { setReasoningEffort(item.id); setEffortMenuOpen(false); }} className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left hover:bg-violet-50 ${reasoningEffort === item.id ? 'bg-violet-50' : ''}`}><span><span className="block text-sm font-semibold text-slate-800">{item.name}</span><span className="block text-[11px] text-slate-500">{item.description}</span></span>{reasoningEffort === item.id && <Check className="h-4 w-4 text-violet-600" />}</button>)}
+            </div>}
+          </div>
           <button type="button" aria-label="Cập nhật danh sách model" title="Cập nhật danh sách model" onClick={() => void loadModels()} disabled={busy || modelsLoading} className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-40"><RefreshCw className={`w-4 h-4 ${modelsLoading ? 'animate-spin' : ''}`} /></button>
         </div>
       </header>

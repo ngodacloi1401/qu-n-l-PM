@@ -7,6 +7,7 @@ import { createChatRequest } from './lib/geminiChat.js';
 import { listGeminiTextModels } from './lib/geminiModels.js';
 import { registerProviderAIRoutes } from './lib/aiRoutes.js';
 import { registerAuthRoutes, requireAuth } from './lib/auth.js';
+import { geminiThinkingConfig, parseReasoningEffort } from './lib/geminiReasoning.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -396,6 +397,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
     }
 
     const primaryModel = (typeof model === 'string' && model.trim()) ? model.trim() : 'gemini-2.5-flash';
+    const reasoningEffort = parseReasoningEffort(req.body?.reasoningEffort);
 
     // Fallback chain in case of model spike / 503 high demand / availability issues
     const candidateModels: string[] = [primaryModel];
@@ -420,7 +422,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
       try {
         console.log(`[AI Route] Attempting model: ${candidate}`);
         if (wantsStream) {
-          const stream: any = await ai.models.generateContentStream({ model: candidate, contents: chat!.contents, config: { systemInstruction: chat!.systemInstruction, maxOutputTokens: 4096 } });
+          const stream: any = await ai.models.generateContentStream({ model: candidate, contents: chat!.contents, config: { systemInstruction: chat!.systemInstruction, maxOutputTokens: 4096, ...geminiThinkingConfig(candidate, reasoningEffort) } });
           streamStarted = true;
           res.status(200).set({ 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
           res.flushHeaders?.();
@@ -434,7 +436,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
         const generatePromise = ai.models.generateContent({
           model: candidate,
           contents: chat ? chat.contents : prompt,
-          config: chat ? { systemInstruction: chat.systemInstruction, maxOutputTokens: 4096 } : undefined,
+          config: chat ? { systemInstruction: chat.systemInstruction, maxOutputTokens: 4096, ...geminiThinkingConfig(candidate, reasoningEffort) } : undefined,
         });
         const response: any = await generatePromise;
         if (response && response.text) {
