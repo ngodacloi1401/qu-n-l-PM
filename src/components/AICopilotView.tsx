@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Plus, Sparkles, RefreshCw, Bot, MessageSquare, Trash2, Square, Database, Copy, Check, Download, FileText, FileSpreadsheet } from 'lucide-react';
+import { Send, Plus, Sparkles, RefreshCw, Bot, MessageSquare, Trash2, Square, Database, Copy, Check, Download, FileText, FileSpreadsheet, Pencil, X } from 'lucide-react';
 import type { RedmineIssue, RedmineProject, RedmineStatus } from '../types/redmine';
 import { FALLBACK_AI_MODELS, askAIChat, getAvailableAIModels, getStoredConfig, type AIProvider } from '../services/redmineApi';
 import type { ChatMessage, ChatScope } from '../services/aiPayload';
@@ -49,6 +49,10 @@ function MessageBody({ text }: { text: string }) {
   </div>;
 }
 
+const messageTime = (value?: string) => value
+  ? new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+  : '';
+
 export function AICopilotView({ issues, statuses, selectedProject, projectId, totalAvailable, isDataLoading, scope }: {
   issues: RedmineIssue[]; statuses: RedmineStatus[]; selectedProject: RedmineProject | undefined; projectId: string; totalAvailable: number; isDataLoading: boolean; scope: ChatScope;
 }) {
@@ -69,6 +73,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const [error, setError] = useState('');
   const [sessionErrors, setSessionErrors] = useState<Record<string, string>>({});
   const [copiedMessage, setCopiedMessage] = useState<number | null>(null);
+  const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [downloading, setDownloading] = useState('');
   const lock = useRef(false);
   const alive = useRef(true);
@@ -146,11 +151,16 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     lock.current = true; setBusy(true); setBusySessionId(active.id); setError('');
     const controller = new AbortController();
     abortRef.current = controller;
-    const messages: ChatMessage[] = retry ? active.messages : [...active.messages, { role: 'user', text: text.trim().slice(0, 4000) }];
+    const userMessage: ChatMessage = { role: 'user', text: text.trim().slice(0, 4000), createdAt: new Date().toISOString() };
+    const messages: ChatMessage[] = retry
+      ? active.messages
+      : editingMessageIndex === null
+        ? [...active.messages, userMessage]
+        : [...active.messages.slice(0, editingMessageIndex), userMessage];
     const sessionId = active.id;
     setSessionErrors(current => ({ ...current, [sessionId]: '' }));
     const pending = { ...store, sessions: store.sessions.map(s => s.id === sessionId ? { ...s, title: s.messages.length ? s.title : text.trim().slice(0, 60), messages } : s) };
-    setStore(pending); if (!retry) setDraft('');
+    setStore(pending); if (!retry) { setDraft(''); setEditingMessageIndex(null); }
     await writeLocalCache(storageKey, pending);
     try {
       const response = await askAIChat(provider, messages, selectedProject?.name || 'Tất cả dự án', issues, statuses, totalAvailable, activeModel, { ...scope, availableModels: modelsSource === 'api' ? modelOptions.map(item => item.id) : [] }, controller.signal);
@@ -160,7 +170,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
         setModelNotice(`Model ${activeModel} không dùng được. Hệ thống đã chuyển sang ${option?.name || response.usedModel}.`);
       }
       const parsed = ensureRequestedChatArtifacts(messages.at(-1)?.text || text, response.result);
-      const answer: ChatMessage = { role: 'assistant', text: parsed.text, model: response.usedModel || activeModel, artifacts: parsed.artifacts };
+      const answer: ChatMessage = { role: 'assistant', text: parsed.text, model: response.usedModel || activeModel, artifacts: parsed.artifacts, createdAt: new Date().toISOString() };
       const latest = await readLocalCache<SessionStore>(storageKey) || pending;
       const existing = latest.sessions.find(s => s.id === sessionId);
       if (JSON.stringify(existing?.messages) === JSON.stringify(messages)) {
@@ -179,6 +189,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     setStore(current => ({ sessions: [session, ...current.sessions], activeId: session.id }));
     setError('');
     setDraft('');
+    setEditingMessageIndex(null);
   };
 
   const deleteSession = (sessionId: string) => {
@@ -193,6 +204,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     });
     setError('');
     setDraft('');
+    setEditingMessageIndex(null);
   };
 
   const copyMessage = async (text: string, index: number) => {
@@ -201,8 +213,17 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
       setCopiedMessage(index);
       window.setTimeout(() => setCopiedMessage(current => current === index ? null : current), 1500);
     } catch {
-      setError('Không thể sao chép câu trả lời trên trình duyệt này.');
+      setError('Không thể sao chép tin nhắn trên trình duyệt này.');
     }
+  };
+
+  const editMessage = (index: number) => {
+    const message = active?.messages[index];
+    if (!message || message.role !== 'user') return;
+    setDraft(message.text);
+    setEditingMessageIndex(index);
+    setError('');
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const downloadArtifact = async (key: string, action: () => Promise<void>) => {
@@ -227,7 +248,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
       <div className="px-3 pt-4 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Lịch sử trò chuyện</div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3 space-y-1">
         {store.sessions.map(session => <div key={session.id} className={`group flex items-center rounded-lg ${session.id === store.activeId ? 'bg-slate-800' : 'hover:bg-slate-900'}`}>
-          <button onClick={() => { setStore(current => ({ ...current, activeId: session.id })); setError(''); setDraft(''); }} className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2.5 text-left text-sm">
+          <button onClick={() => { setStore(current => ({ ...current, activeId: session.id })); setError(''); setDraft(''); setEditingMessageIndex(null); }} className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2.5 text-left text-sm">
             {busySessionId === session.id ? <RefreshCw className="w-4 h-4 shrink-0 text-indigo-300 animate-spin" /> : <MessageSquare className="w-4 h-4 shrink-0 text-slate-400" />}<span className="truncate">{session.title}</span>
           </button>
           <button aria-label={`Xóa ${session.title}`} disabled={busySessionId === session.id} onClick={() => deleteSession(session.id)} className="p-2 mr-1 text-slate-500 hover:text-rose-300 opacity-0 group-hover:opacity-100 focus:opacity-100 disabled:hidden"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -249,7 +270,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
-          <select aria-label="Phiên làm việc" value={store.activeId} disabled={!storageKey} onChange={e => { setStore(current => ({ ...current, activeId: e.target.value })); setError(''); setDraft(''); }} className="lg:hidden max-w-36 border border-slate-200 rounded-lg px-2 py-2 text-xs bg-slate-50">
+          <select aria-label="Phiên làm việc" value={store.activeId} disabled={!storageKey} onChange={e => { setStore(current => ({ ...current, activeId: e.target.value })); setError(''); setDraft(''); setEditingMessageIndex(null); }} className="lg:hidden max-w-36 border border-slate-200 rounded-lg px-2 py-2 text-xs bg-slate-50">
             {store.sessions.map(session => <option key={session.id} value={session.id}>{session.title}</option>)}
           </select>
           <button onClick={createNewSession} disabled={!storageKey} className="lg:hidden p-2 rounded-lg border border-slate-200 text-slate-600"><Plus className="w-4 h-4" /></button>
@@ -284,7 +305,14 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
 
         {!!active?.messages.length && <div className="max-w-3xl mx-auto px-4 sm:px-6 py-7 space-y-7">
           {active.messages.map((message, index) => message.role === 'user'
-            ? <div key={index} className="flex justify-end pl-10"><div className="max-w-[85%] rounded-2xl rounded-br-md bg-slate-900 text-white px-4 py-3 text-sm"><MessageBody text={message.text} /></div></div>
+            ? <div key={index} className="flex justify-end pl-10"><div className="max-w-[85%]">
+                <div className="rounded-2xl rounded-br-md bg-slate-900 text-white px-4 py-3 text-sm"><MessageBody text={message.text} /></div>
+                <div className="mt-1.5 flex items-center justify-end gap-2 text-[11px] text-slate-400">
+                  {messageTime(message.createdAt) && <span>{messageTime(message.createdAt)}</span>}
+                  <button type="button" title="Sao chép tin nhắn" aria-label="Sao chép tin nhắn" onClick={() => void copyMessage(message.text, index)} className="rounded-md p-1 hover:bg-slate-100 hover:text-slate-700">{copiedMessage === index ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}</button>
+                  <button type="button" title="Chỉnh sửa và gửi lại từ đây" aria-label="Chỉnh sửa tin nhắn" disabled={activeBusy} onClick={() => editMessage(index)} className="rounded-md p-1 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"><Pencil className="w-3.5 h-3.5" /></button>
+                </div>
+              </div></div>
             : <div key={index} className="flex items-start gap-3">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center shrink-0"><Bot className="w-4 h-4" /></div>
                 <div className="min-w-0 flex-1 text-sm text-slate-800">
@@ -314,6 +342,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
       <footer className="border-t border-slate-200 bg-white px-3 sm:px-5 py-3">
         <div className="max-w-3xl mx-auto">
           {visibleError && <div role="alert" className="mb-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2.5">{visibleError}{active?.messages.at(-1)?.role === 'user' && <button disabled={busy} onClick={() => void submit(active.messages.at(-1)!.text, true)} className="ml-3 font-semibold underline">Thử lại</button>}</div>}
+          {editingMessageIndex !== null && <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-800"><span>Đang sửa tin nhắn. Khi gửi, cuộc trò chuyện sẽ tiếp tục từ tin nhắn này.</span><button type="button" onClick={() => { setEditingMessageIndex(null); setDraft(''); }} className="inline-flex items-center gap-1 font-semibold hover:text-indigo-950"><X className="w-3.5 h-3.5" />Hủy</button></div>}
           <form onSubmit={event => { event.preventDefault(); void submit(draft); }} className="relative rounded-2xl border border-slate-300 bg-white shadow-sm focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100">
             <textarea ref={textareaRef} aria-label="Tin nhắn cho AI" value={draft} onChange={event => setDraft(event.target.value)} maxLength={4000} disabled={!storageKey} rows={1} placeholder={isDataLoading ? 'Đang chuẩn bị dữ liệu dự án…' : busy && !activeBusy ? 'AI đang trả lời ở cuộc trò chuyện khác…' : 'Nhắn tin cho AI PM…'} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(draft); } }} className="block w-full resize-none bg-transparent pl-4 pr-14 py-3.5 text-sm min-h-12 max-h-44 focus:outline-none disabled:bg-slate-50 rounded-2xl" />
             {activeBusy

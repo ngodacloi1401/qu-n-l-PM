@@ -32,7 +32,7 @@ test('Gemini chat carries both turns to the SDK with current context and selecte
     assert.deepEqual(captured[1].contents.map((m: any) => m.role), ['user', 'model', 'user']);
     assert.equal(captured[1].contents[1].parts[0].text, first.result);
     assert.match(JSON.stringify(captured[1].systemInstruction), /Test Project/);
-    assert.match(JSON.stringify(captured[1].systemInstruction), /allIssues/);
+    assert.match(JSON.stringify(captured[1].systemInstruction), /issueRows/);
   } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 
@@ -75,7 +75,7 @@ test('Gemini timeout returns immediately without multiplying delay across fallba
   } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 
-test('ten thousand project issues remain complete in the compact AI context', () => {
+test('ten thousand project issues keep complete aggregates with a bounded detail context', () => {
   const issues = Array.from({ length: 10_000 }, (_, index) => ({
     id: index + 1,
     subject: `Công việc ${index + 1} ${'x'.repeat(120)}`,
@@ -85,18 +85,22 @@ test('ten thousand project issues remain complete in the compact AI context', ()
   } as RedmineIssue));
   const payload = buildAIChatPayload([{ role: 'user', text: 'Tổng hợp toàn dự án' }], 'Large Project', issues, [], 10_000, 'gemini-2.5-flash', { loadedCount: 10_000 });
   assert.equal(payload.context.isComplete, true);
-  assert.equal(payload.context.allIssues.length, 10_000);
-  assert.ok(Buffer.byteLength(JSON.stringify(payload)) <= 3_800_000);
+  assert.equal(payload.context.allIssueCount, 10_000);
+  assert.equal(payload.context.issueRows.length, 400);
+  assert.equal(payload.context.includedIssueCount, 400);
+  assert.equal(payload.context.omittedIssueCount, 9600);
+  assert.equal(payload.context.statuses.reduce((sum, row) => sum + row.count, 0), 10_000);
+  assert.ok(Buffer.byteLength(JSON.stringify(payload)) <= 1_000_000);
 });
 
-test('chat validation rejects invalid roles and includes every issue within the request bound', () => {
+test('chat validation rejects invalid roles and keeps complete counts within a bounded request', () => {
   assert.throws(() => createChatRequest({ messages: [{ role: 'system', text: 'x' }] }), /không hợp lệ/);
   assert.throws(() => createChatRequest({ messages: [{ role: 'assistant', text: 'x' }] }), /bắt đầu/);
   const messages: ChatMessage[] = Array.from({ length: 50 }, (_, i) => ({ role: i % 2 ? 'user' : 'assistant', text: 'ữ'.repeat(8000) }));
   const issue = { id: 123, subject: 'ữ'.repeat(1000), status: { id: 1, name: 'QA Verified' }, tracker: { id: 4, name: 'Task' }, project: { id: 84, name: 'Test' }, priority: { id: 1, name: 'Normal' } } as RedmineIssue;
   const payload = buildAIChatPayload(messages, 'Test', Array(5000).fill(issue), [], 6650, 'gemini-2.5-flash');
-  assert.ok(Buffer.byteLength(JSON.stringify(payload)) <= 3_800_000);
-  assert.equal(payload.context.allIssues.length, 5000);
+  assert.ok(Buffer.byteLength(JSON.stringify(payload)) <= 1_000_000);
+  assert.equal(payload.context.issueRows.length, 400);
   assert.equal(payload.context.allIssueCount, 5000);
   assert.equal(payload.context.isComplete, false);
   assert.equal(payload.statistics.totalIssues, 5000);
@@ -179,10 +183,10 @@ test('provider chat routes send the full PM prompt to OpenAI and Anthropic', asy
     assert.match(captured[0].body.instructions, /Test Project/);
     assert.equal(captured[0].body.store, false);
     assert.equal(captured[1].body.model, 'gpt-5.3-codex');
-    assert.match(captured[1].body.instructions, /allIssues/);
+    assert.match(captured[1].body.instructions, /issueRows/);
     assert.equal(captured[2].body.model, 'claude-sonnet-5');
     assert.equal(captured[2].body.max_tokens, 4096);
-    assert.match(captured[2].body.system, /allIssues/);
+    assert.match(captured[2].body.system, /issueRows/);
     assert.equal(captured[2].headers.get('anthropic-version'), '2023-06-01');
   } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
 });

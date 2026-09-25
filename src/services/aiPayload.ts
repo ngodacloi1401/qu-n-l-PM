@@ -10,7 +10,7 @@ export interface ChatArtifact {
   title?: string;
   content: string;
 }
-export interface ChatMessage { role: 'user' | 'assistant'; text: string; model?: string; artifacts?: ChatArtifact[] }
+export interface ChatMessage { role: 'user' | 'assistant'; text: string; model?: string; artifacts?: ChatArtifact[]; createdAt?: string }
 export interface ChatScope { loadedCount?: number; availableModels?: string[] }
 export function detectRequestedArtifactKind(text: string): ChatArtifactKind | null {
   const normalized = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
@@ -32,10 +32,17 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
   const important = new Set([...stats.overdueIssues, ...stats.blockedIssues].map(i => i.id));
   const normalize = (text: string) => text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
   const query = normalize(latest);
+  const ignoredWords = new Set(['cho', 'toi', 'cua', 'voi', 'nhung', 'cac', 'mot', 'nay', 'kia', 'duoc', 'dang', 'theo', 'trong', 'tren', 'duoi', 'hay', 'va', 'thi', 'la', 'sao', 'nhu', 've', 'tu', 'den', 'ai', 'pm', 'du', 'an']);
+  const queryTokens = [...new Set(query.split(/[^a-z0-9]+/).filter(word => word.length >= 3 && !ignoredWords.has(word)))];
   const memberMatch = (i: RedmineIssue) => !!i.assigned_to?.name && query.includes(normalize(i.assigned_to.name));
-  const sample = [...issues].sort((a, b) => Number(ids.has(b.id)) - Number(ids.has(a.id)) || Number(memberMatch(b)) - Number(memberMatch(a)) || Number(important.has(b.id)) - Number(important.has(a.id)));
+  const textScore = (issue: RedmineIssue) => {
+    if (!queryTokens.length) return 0;
+    const haystack = normalize(`${issue.subject} ${issue.description || ''}`);
+    return queryTokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
+  };
+  const sample = [...issues].sort((a, b) => Number(ids.has(b.id)) - Number(ids.has(a.id)) || Number(memberMatch(b)) - Number(memberMatch(a)) || textScore(b) - textScore(a) || Number(important.has(b.id)) - Number(important.has(a.id)) || b.id - a.id);
   const bounded = buildAIReportPayload('risk', projectName, sample, { totalIssues: stats.total, closedCount: stats.closed, inProgressCount: stats.inProgress, overdueCount: stats.overdueIssues.length, blockedCount: stats.blockedIssues.length }, model);
-  const history = messages.slice(-24).map(m => ({ role: m.role, text: m.text.slice(0, 8000) }));
+  const history = messages.slice(-16).map(m => ({ role: m.role, text: m.text.slice(0, 5000) }));
   while (history.at(0)?.role === 'assistant') history.shift();
   const requestedArtifact = detectRequestedArtifactKind(messages.at(-1)?.text || '');
   if (requestedArtifact && history.at(-1)?.role === 'user') {
@@ -47,7 +54,9 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
     return [...rows.values()];
   };
   const loadedCount = scope.loadedCount ?? issues.length;
-  const compactRows = (subjectLength: number) => issues.map(i => [
+  const issueRowLimit = 400;
+  const selectedIssues = sample.slice(0, issueRowLimit);
+  const compactRows = (subjectLength: number) => selectedIssues.map(i => [
     i.id, i.subject.slice(0, subjectLength), i.project?.id ?? null, i.tracker?.id ?? null, i.status?.id ?? null,
     i.priority?.id ?? null, i.assigned_to?.id ?? null, i.done_ratio ?? 0, i.start_date ?? '', i.due_date ?? '',
     i.estimated_hours ?? null, i.spent_hours ?? null, i.updated_on?.slice(0, 10) ?? '',
@@ -56,20 +65,22 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
     today: vietnamToday(), loadedCount, totalAvailable, allIssueCount: issues.length,
     availableModels: (scope.availableModels || []).slice(0, 100),
     detailedIssueCount: bounded.issues.length, isComplete: loadedCount === totalAvailable && issues.length === totalAvailable,
+    aggregateCoverage: 'all-loaded-issues', includedIssueCount: selectedIssues.length, omittedIssueCount: Math.max(0, issues.length - selectedIssues.length),
     issueSchema: ['id', 'subject', 'projectId', 'trackerId', 'statusId', 'priorityId', 'assigneeId', 'doneRatio', 'startDate', 'dueDate', 'estimatedHours', 'spentHours', 'updatedDate'],
-    allIssues: compactRows(160),
+    issueRows: compactRows(160),
+    riskSummary: { closedCount: stats.closed, inProgressCount: stats.inProgress, overdueCount: stats.overdueIssues.length, blockedCount: stats.blockedIssues.length, completionRate: stats.completionRate },
     statuses: breakdown(i => i.status).map(row => ({ ...row, is_closed: statuses.find(s => s.id === row.id)?.is_closed })),
     trackers: breakdown(i => i.tracker), priorities: breakdown(i => i.priority), projects: breakdown(i => i.project),
     workload: stats.workloadAll.map(row => ({ ...row, name: row.name.slice(0, 80) })),
   };
   const payload = { ...bounded, mode: 'chat', messages: history, context };
   const bytes = () => new TextEncoder().encode(JSON.stringify(payload)).byteLength;
-  if (bytes() > 3_300_000) context.allIssues = compactRows(80);
-  if (bytes() > 3_300_000) context.allIssues = compactRows(0);
+  if (bytes() > 700_000) context.issueRows = compactRows(80);
+  if (bytes() > 850_000) context.issueRows = compactRows(0);
   while (history.length > 1 && bytes() > 3_600_000) {
     history.shift(); while (history.at(0)?.role === 'assistant') history.shift();
   }
-  if (bytes() > 3_800_000) throw new Error('Dữ liệu dự án vượt giới hạn gửi AI. Hãy chọn một dự án cụ thể thay vì Tất cả dự án.');
+  if (bytes() > 1_000_000) throw new Error('Ngữ cảnh cuộc trò chuyện vượt giới hạn xử lý. Hãy tạo cuộc trò chuyện mới rồi thử lại.');
   return payload;
 }
 
