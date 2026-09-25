@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Send, Plus, Sparkles, RefreshCw, Bot, MessageSquare, Trash2, Square, Database, Copy, Check, Download, FileText, FileSpreadsheet, Pencil, X, KeyRound } from 'lucide-react';
 import type { RedmineIssue, RedmineProject, RedmineStatus } from '../types/redmine';
 import { FALLBACK_AI_MODELS, askAIChat, getAvailableAIModels, getStoredConfig, type AIProvider } from '../services/redmineApi';
-import type { ChatMessage, ChatScope } from '../services/aiPayload';
+import { detectGoogleWorkspaceCreate, type ChatMessage, type ChatScope } from '../services/aiPayload';
 import { cacheScope, readLocalCache, writeLocalCache } from '../services/localCache';
 import { downloadAnswerAsDocx, downloadChatArtifact, ensureRequestedChatArtifacts } from '../services/chatArtifacts';
 
@@ -75,6 +75,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const [copiedMessage, setCopiedMessage] = useState<number | null>(null);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [downloading, setDownloading] = useState('');
+  const [actionNotice, setActionNotice] = useState('');
   const lock = useRef(false);
   const alive = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
@@ -148,6 +149,16 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const submit = async (text: string, retry = false) => {
     if (lock.current || isDataLoading || !active || !storageKey || !text.trim()) return;
     if (!activeModel) { setError('Nhập mã model AI trước khi gửi.'); return; }
+    const workspaceTarget = retry ? null : detectGoogleWorkspaceCreate(text);
+    if (workspaceTarget) {
+      const opened = window.open(workspaceTarget.url, '_blank');
+      if (opened) {
+        opened.opener = null;
+        setActionNotice(`Đã tạo ${workspaceTarget.name} trong tab mới. AI đang soạn nội dung cho tệp.`);
+      } else {
+        setActionNotice(`Trình duyệt đã chặn tab ${workspaceTarget.name}. Hãy cho phép cửa sổ bật lên rồi gửi lại yêu cầu.`);
+      }
+    } else setActionNotice('');
     lock.current = true; setBusy(true); setBusySessionId(active.id); setError('');
     const controller = new AbortController();
     abortRef.current = controller;
@@ -190,6 +201,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     setError('');
     setDraft('');
     setEditingMessageIndex(null);
+    setActionNotice('');
   };
 
   const deleteSession = (sessionId: string) => {
@@ -205,6 +217,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     setError('');
     setDraft('');
     setEditingMessageIndex(null);
+    setActionNotice('');
   };
 
   const copyMessage = async (text: string, index: number) => {
@@ -342,6 +355,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
       <footer className="border-t border-slate-200 bg-white px-3 sm:px-5 py-3">
         <div className="max-w-3xl mx-auto">
           {visibleError && <div role="alert" className="mb-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2.5">{visibleError}{active?.messages.at(-1)?.role === 'user' && <button disabled={busy} onClick={() => void submit(active.messages.at(-1)!.text, true)} className="ml-3 font-semibold underline">Thử lại</button>}</div>}
+          {actionNotice && <div role="status" className="mb-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{actionNotice}</div>}
           {editingMessageIndex !== null && <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-800"><span>Đang sửa tin nhắn. Khi gửi, cuộc trò chuyện sẽ tiếp tục từ tin nhắn này.</span><button type="button" onClick={() => { setEditingMessageIndex(null); setDraft(''); }} className="inline-flex items-center gap-1 font-semibold hover:text-indigo-950"><X className="w-3.5 h-3.5" />Hủy</button></div>}
           <form onSubmit={event => { event.preventDefault(); void submit(draft); }} className="relative rounded-2xl border border-slate-300 bg-white shadow-sm focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100">
             <textarea ref={textareaRef} aria-label="Tin nhắn cho AI" value={draft} onChange={event => setDraft(event.target.value)} maxLength={4000} disabled={!storageKey} rows={1} placeholder={isDataLoading ? 'Đang chuẩn bị dữ liệu dự án…' : busy && !activeBusy ? 'AI đang trả lời ở cuộc trò chuyện khác…' : 'Nhắn tin cho AI PM…'} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(draft); } }} className="block w-full resize-none bg-transparent pl-4 pr-14 py-3.5 text-sm min-h-12 max-h-44 focus:outline-none disabled:bg-slate-50 rounded-2xl" />

@@ -12,10 +12,23 @@ export interface ChatArtifact {
 }
 export interface ChatMessage { role: 'user' | 'assistant'; text: string; model?: string; artifacts?: ChatArtifact[]; createdAt?: string }
 export interface ChatScope { loadedCount?: number; availableModels?: string[] }
+export type GoogleWorkspaceTarget = { kind: 'docs' | 'sheets' | 'slides' | 'forms'; name: string; url: string };
+const normalizeRequest = (text: string) => text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+export function detectGoogleWorkspaceCreate(text: string): GoogleWorkspaceTarget | null {
+  const normalized = normalizeRequest(text);
+  if (!/\b(tao|mo|lam|soan|generate|create)\b/.test(normalized)) return null;
+  if (/\b(google|gg)\s*(sheets?|bang\s*tinh)\b|\bggsheets?\b/.test(normalized)) return { kind: 'sheets', name: 'Google Sheets', url: 'https://sheets.new' };
+  if (/\b(google|gg)\s*(slides?|trinh\s*chieu)\b|\bggslides?\b/.test(normalized)) return { kind: 'slides', name: 'Google Slides', url: 'https://slides.new' };
+  if (/\b(google|gg)\s*(forms?|bieu\s*mau)\b|\bggforms?\b/.test(normalized)) return { kind: 'forms', name: 'Google Forms', url: 'https://forms.new' };
+  if (/\b(google|gg)\s*(docs?|docx|tai\s*lieu)\b|\bggdocs?\b/.test(normalized)) return { kind: 'docs', name: 'Google Docs', url: 'https://docs.new' };
+  return null;
+}
 export function detectRequestedArtifactKind(text: string): ChatArtifactKind | null {
-  const normalized = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+  const normalized = normalizeRequest(text);
   const asksForFile = /\b(tao|xuat|lam|soan|tai|generate|export)\b/.test(normalized);
   if (!asksForFile) return null;
+  if (/\b(google|gg)\s*(sheets?|bang\s*tinh)\b|\bggsheets?\b/.test(normalized)) return 'xlsx';
+  if (/\b(google|gg)\s*(docs?|docx|tai\s*lieu)\b|\bggdocs?\b/.test(normalized)) return 'docx';
   if (/\b(xlsx|excel|bang tinh)\b/.test(normalized)) return 'xlsx';
   if (/\bcsv\b/.test(normalized)) return 'csv';
   if (/\bjson\b/.test(normalized)) return 'json';

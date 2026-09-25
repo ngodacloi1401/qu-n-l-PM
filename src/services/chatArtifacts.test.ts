@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ensureRequestedChatArtifacts, extractChatArtifacts } from './chatArtifacts';
+import { detectGoogleWorkspaceCreate, detectRequestedArtifactKind } from './aiPayload';
 
 test('extracts downloadable artifacts and removes machine metadata from the answer', () => {
   const response = `Tôi đã tạo kế hoạch tuần.\n<pm_artifacts>{"artifacts":[{"name":"ke-hoach","kind":"docx","title":"Kế hoạch tuần","content":"# Kế hoạch\\n\\n- Việc 1"},{"name":"du-lieu.xlsx","kind":"xlsx","content":"{\\"sheets\\":[{\\"name\\":\\"Data\\",\\"headers\\":[\\"ID\\"],\\"rows\\":[[1]]}]}"}]}</pm_artifacts>`;
@@ -32,4 +33,14 @@ test('creates a DOCX fallback when a provider refuses a file request', () => {
 test('does not add a file to ordinary chat answers', () => {
   const parsed = ensureRequestedChatArtifacts('Tóm tắt tiến độ dự án', 'Dự án đang đúng tiến độ.');
   assert.deepEqual(parsed.artifacts, []);
+});
+
+test('recognizes direct Google Workspace creation requests', () => {
+  assert.deepEqual(detectGoogleWorkspaceCreate('tạo cho tôi file gg docx')?.kind, 'docs');
+  assert.deepEqual(detectGoogleWorkspaceCreate('Tạo ggsheet tổng hợp tiến độ')?.kind, 'sheets');
+  assert.deepEqual(detectGoogleWorkspaceCreate('làm Google Slides báo cáo')?.kind, 'slides');
+  assert.deepEqual(detectGoogleWorkspaceCreate('tạo Google Form khảo sát')?.kind, 'forms');
+  assert.equal(detectGoogleWorkspaceCreate('phân tích Google Sheets hiện tại'), null);
+  assert.equal(detectRequestedArtifactKind('tạo ggsheet tổng hợp tiến độ'), 'xlsx');
+  assert.equal(detectRequestedArtifactKind('tạo file gg docx'), 'docx');
 });
