@@ -64,6 +64,22 @@ test('autoDetectMapping handles English and alternative headers', () => {
   assert.equal(mapping.dueDateCol, 9);
 });
 
+test('autoDetectMapping handles the downloadable Vietnamese template without column collisions', () => {
+  const headers = [
+    'Tuần', 'Ngày bắt đầu', 'Tracker', 'Nhóm việc / Dự án', 'Tên việc cần làm',
+    'Mô tả chi tiết', 'Mức độ ưu tiên (Priority)', 'Thời lượng (giờ)',
+    '% Hoàn thành', 'Trạng thái (Status)', 'Kết quả công việc / Ghi chú',
+    'Hạn chót (Deadline)', 'Task cha', 'Lý do trễ hạn',
+  ];
+  const mapping = autoDetectMapping(headers);
+
+  assert.equal(mapping.projectCol, -1);
+  assert.equal(mapping.assignedDateCol, 1);
+  assert.equal(mapping.categoryCol, 3);
+  assert.equal(mapping.doneRatioCol, 8);
+  assert.equal(mapping.dueDateCol, 11);
+});
+
 test('convertRowsToTasks converts parsed matrix into PersonalTask array', () => {
   const mapping = {
     weekCol: 0,

@@ -6,6 +6,7 @@ function normalizeHeader(str: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
     .replace(/[^a-z0-9]/g, '')
     .trim();
 }
@@ -36,7 +37,10 @@ export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
     const norm = normalizeHeader(h);
     if (!norm) return;
 
-    if (mapping.projectCol === -1 && (norm.includes('duan') || norm.includes('project'))) {
+    if (
+      mapping.projectCol === -1 &&
+      (norm === 'duan' || norm === 'tenduan' || norm === 'project' || norm === 'projectname' || norm === 'projectid')
+    ) {
       mapping.projectCol = idx;
     }
     if (mapping.weekCol === -1 && (norm.includes('tuan') || norm.includes('week'))) {
@@ -53,7 +57,7 @@ export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
       mapping.trackerCol = idx;
     } else if (
       mapping.categoryCol === -1 &&
-      (norm.includes('nhomviec') || norm.includes('nhom') || norm.includes('category') || norm.includes('duan') || norm.includes('project'))
+      (norm.includes('nhomviec') || norm.includes('nhom') || norm.includes('category'))
     ) {
       mapping.categoryCol = idx;
     } else if (
@@ -88,7 +92,7 @@ export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
       mapping.resultNoteCol = idx;
     } else if (
       mapping.dueDateCol === -1 &&
-      (norm.includes('deadline') || norm.includes('hanchot') || norm.includes('ngayhet') || norm.includes('duedate') || norm.includes('ngayhoanthanh') || norm.includes('han'))
+      (norm.includes('deadline') || norm.includes('hanchot') || norm.includes('ngayhethan') || norm.includes('duedate') || norm.includes('ngayhoanthanh'))
     ) {
       mapping.dueDateCol = idx;
     } else if (
@@ -103,7 +107,7 @@ export function autoDetectMapping(headers: string[]): ExcelColumnMapping {
       mapping.parentTaskCol = idx;
     } else if (
       mapping.doneRatioCol === -1 &&
-      (norm.includes('done') || norm.includes('phantram') || norm.includes('progress'))
+      (norm.includes('done') || norm.includes('phantram') || norm.includes('progress') || norm.includes('hoanthanh'))
     ) {
       mapping.doneRatioCol = idx;
     }
