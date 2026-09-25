@@ -66,6 +66,75 @@ async function fetchAI(url: string, init: RequestInit) {
   }
 }
 
+async function readEventStream(response: Response, onEvent: (event: any) => void) {
+  if (!response.body) throw Object.assign(new Error('Nhà cung cấp AI không trả về luồng dữ liệu.'), { status: 502 });
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() || '';
+    for (const block of blocks) {
+      for (const line of block.split(/\r?\n/)) {
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === '[DONE]') continue;
+        try { onEvent(JSON.parse(data)); } catch { /* Ignore keep-alive and malformed provider events. */ }
+      }
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) {
+    for (const line of buffer.split(/\r?\n/)) {
+      if (!line.startsWith('data:')) continue;
+      try { onEvent(JSON.parse(line.slice(5).trim())); } catch { /* Ignore incomplete trailing events. */ }
+    }
+  }
+}
+
+export async function streamOpenAIResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, onText: (delta: string) => void, onReady?: () => void) {
+  const response = await fetchAI('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, instructions: systemInstruction, input: messages, max_output_tokens: 4096, store: false, stream: true }),
+  });
+  if (!response.ok) {
+    const data: any = await response.json().catch(() => ({}));
+    throw responseError('openai', response, data?.error?.message);
+  }
+  onReady?.();
+  let text = '';
+  await readEventStream(response, event => {
+    if (event?.type === 'response.output_text.delta' && typeof event.delta === 'string') { text += event.delta; onText(event.delta); }
+    if (event?.type === 'error') throw Object.assign(new Error(event?.error?.message || 'OpenAI stream gặp lỗi.'), { status: 502 });
+  });
+  if (!text.trim()) throw Object.assign(new Error('OpenAI không trả về nội dung văn bản.'), { status: 502 });
+  return text;
+}
+
+export async function streamAnthropicResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>, onText: (delta: string) => void, onReady?: () => void) {
+  const response = await fetchAI('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, system: systemInstruction, messages, max_tokens: 4096, stream: true }),
+  });
+  if (!response.ok) {
+    const data: any = await response.json().catch(() => ({}));
+    throw responseError('anthropic', response, data?.error?.message);
+  }
+  onReady?.();
+  let text = '';
+  await readEventStream(response, event => {
+    const delta = event?.type === 'content_block_delta' && event?.delta?.type === 'text_delta' ? event.delta.text : '';
+    if (typeof delta === 'string' && delta) { text += delta; onText(delta); }
+    if (event?.type === 'error') throw Object.assign(new Error(event?.error?.message || 'Anthropic stream gặp lỗi.'), { status: 502 });
+  });
+  if (!text.trim()) throw Object.assign(new Error('Anthropic không trả về nội dung văn bản.'), { status: 502 });
+  return text;
+}
+
 export async function generateOpenAIResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>) {
   const response = await fetchAI('https://api.openai.com/v1/responses', {
     method: 'POST',

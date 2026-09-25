@@ -55,7 +55,7 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
   };
   const sample = [...issues].sort((a, b) => Number(ids.has(b.id)) - Number(ids.has(a.id)) || Number(memberMatch(b)) - Number(memberMatch(a)) || textScore(b) - textScore(a) || Number(important.has(b.id)) - Number(important.has(a.id)) || b.id - a.id);
   const bounded = buildAIReportPayload('risk', projectName, sample, { totalIssues: stats.total, closedCount: stats.closed, inProgressCount: stats.inProgress, overdueCount: stats.overdueIssues.length, blockedCount: stats.blockedIssues.length }, model);
-  const history = messages.slice(-16).map(m => ({ role: m.role, text: m.text.slice(0, 5000) }));
+  const history = messages.slice(-12).map(m => ({ role: m.role, text: m.text.slice(0, 4000) }));
   while (history.at(0)?.role === 'assistant') history.shift();
   const requestedArtifact = detectRequestedArtifactKind(messages.at(-1)?.text || '');
   if (requestedArtifact && history.at(-1)?.role === 'user') {
@@ -67,7 +67,7 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
     return [...rows.values()];
   };
   const loadedCount = scope.loadedCount ?? issues.length;
-  const issueRowLimit = 200;
+  const issueRowLimit = 120;
   const selectedIssues = sample.slice(0, issueRowLimit);
   const compactRows = (subjectLength: number) => selectedIssues.map(i => [
     i.id, i.subject.slice(0, subjectLength), i.project?.id ?? null, i.tracker?.id ?? null, i.status?.id ?? null,

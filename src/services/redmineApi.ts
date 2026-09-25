@@ -906,10 +906,33 @@ export interface GeminiPMResponse {
 
 export type AIPMResponse = GeminiPMResponse;
 
-export async function askAIChat(provider: AIProvider, messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}, signal?: AbortSignal): Promise<AIPMResponse> {
+export async function askAIChat(provider: AIProvider, messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}, signal?: AbortSignal, onStream?: (text: string) => void): Promise<AIPMResponse> {
   const payload = { ...buildAIChatPayload(messages, projectName, issues, statuses, totalAvailable, model, scope), provider };
   const url = provider === 'gemini' ? '/api/gemini/pm-insights' : '/api/ai/chat';
-  const res = await fetch(url, { method: 'POST', headers: getHeaders(), body: JSON.stringify(payload), signal });
+  const headers = new Headers(getHeaders());
+  if (provider !== 'gemini' && onStream) headers.set('x-ai-stream', '1');
+  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload), signal });
+  if (res.headers.get('content-type')?.includes('application/x-ndjson')) {
+    if (!res.body) throw new Error('Máy chủ AI không trả về luồng dữ liệu.');
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = ''; let result = ''; let metadata: Partial<AIPMResponse> = {};
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split(/\r?\n/); buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === 'delta' && typeof event.delta === 'string') { result += event.delta; onStream?.(result); }
+        if (event.type === 'done') metadata = event;
+        if (event.type === 'error') throw new Error(event.error || 'Luồng phản hồi AI gặp lỗi.');
+      }
+      if (done) break;
+    }
+    if (!result.trim()) throw new Error('AI không trả về nội dung văn bản.');
+    return { result, usedModel: metadata.usedModel, requestedModel: metadata.requestedModel, fallbackOccurred: metadata.fallbackOccurred };
+  }
   return readAIReportResponse(res);
 }
 

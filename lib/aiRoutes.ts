@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import { createPMChatPrompt } from './geminiChat.js';
-import { generateAnthropicResponse, generateOpenAIResponse, listAnthropicModels, listOpenAICodexModels, listOpenAIModels, type AIProvider } from './aiProviders.js';
+import { generateAnthropicResponse, generateOpenAIResponse, listAnthropicModels, listOpenAICodexModels, listOpenAIModels, streamAnthropicResponse, streamOpenAIResponse, type AIProvider } from './aiProviders.js';
 
 function providerKey(req: Request, provider: AIProvider) {
   if (provider === 'openai' || provider === 'codex') return ((req.headers['x-openai-api-key'] as string | undefined)?.trim() || process.env.OPENAI_API_KEY || '').trim();
@@ -43,15 +43,36 @@ export function registerProviderAIRoutes(app: Express) {
       ? req.body.context.availableModels.filter((id: any) => typeof id === 'string' && id.trim()).slice(0, 100)
       : [];
     const candidates = [primaryModel, ...availableModels.filter((id: string) => id !== primaryModel)].slice(0, 4);
+    const wantsStream = req.headers['x-ai-stream'] === '1';
+    let streamStarted = false;
+    const startStream = () => {
+      if (streamStarted) return;
+      streamStarted = true;
+      res.status(200).set({ 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
+      res.flushHeaders?.();
+    };
     let lastError: any;
     for (const candidate of candidates) {
       try {
-        const result = provider === 'anthropic'
-          ? await generateAnthropicResponse(apiKey, candidate, chat.systemInstruction, chat.messages)
-          : await generateOpenAIResponse(apiKey, candidate, chat.systemInstruction, chat.messages);
+        const result = wantsStream
+          ? provider === 'anthropic'
+            ? await streamAnthropicResponse(apiKey, candidate, chat.systemInstruction, chat.messages, delta => res.write(`${JSON.stringify({ type: 'delta', delta })}\n`), startStream)
+            : await streamOpenAIResponse(apiKey, candidate, chat.systemInstruction, chat.messages, delta => res.write(`${JSON.stringify({ type: 'delta', delta })}\n`), startStream)
+          : provider === 'anthropic'
+            ? await generateAnthropicResponse(apiKey, candidate, chat.systemInstruction, chat.messages)
+            : await generateOpenAIResponse(apiKey, candidate, chat.systemInstruction, chat.messages);
+        if (wantsStream) {
+          startStream();
+          res.write(`${JSON.stringify({ type: 'done', usedModel: candidate, requestedModel: primaryModel, fallbackOccurred: candidate !== primaryModel })}\n`);
+          return res.end();
+        }
         return res.json({ result, usedModel: candidate, requestedModel: primaryModel, fallbackOccurred: candidate !== primaryModel });
       } catch (error: any) {
         lastError = error;
+        if (streamStarted) {
+          res.write(`${JSON.stringify({ type: 'error', error: error?.message || `${providerLabel(provider)} không phản hồi được.` })}\n`);
+          return res.end();
+        }
         if (![400, 404].includes(Number(error?.status))) break;
       }
     }

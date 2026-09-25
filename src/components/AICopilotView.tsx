@@ -76,6 +76,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [downloading, setDownloading] = useState('');
   const [actionNotice, setActionNotice] = useState('');
+  const [streamingText, setStreamingText] = useState('');
   const lock = useRef(false);
   const alive = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
@@ -159,7 +160,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
         setActionNotice(`Trình duyệt đã chặn tab ${workspaceTarget.name}. Hãy cho phép cửa sổ bật lên rồi gửi lại yêu cầu.`);
       }
     } else setActionNotice('');
-    lock.current = true; setBusy(true); setBusySessionId(active.id); setError('');
+    lock.current = true; setBusy(true); setBusySessionId(active.id); setStreamingText(''); setError('');
     const controller = new AbortController();
     abortRef.current = controller;
     const userMessage: ChatMessage = { role: 'user', text: text.trim().slice(0, 4000), createdAt: new Date().toISOString() };
@@ -174,7 +175,9 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     setStore(pending); if (!retry) { setDraft(''); setEditingMessageIndex(null); }
     await writeLocalCache(storageKey, pending);
     try {
-      const response = await askAIChat(provider, messages, selectedProject?.name || 'Tất cả dự án', issues, statuses, totalAvailable, activeModel, { ...scope, availableModels: modelsSource === 'api' ? modelOptions.map(item => item.id) : [] }, controller.signal);
+      const response = await askAIChat(provider, messages, selectedProject?.name || 'Tất cả dự án', issues, statuses, totalAvailable, activeModel, { ...scope, availableModels: modelsSource === 'api' ? modelOptions.map(item => item.id) : [] }, controller.signal, partial => {
+        if (alive.current) setStreamingText(partial);
+      });
       if (response.fallbackOccurred && response.usedModel) {
         const option = modelOptions.find(item => item.id === response.usedModel);
         setModel(response.usedModel); setCustomMode(!option); if (!option) setCustom(response.usedModel);
@@ -192,7 +195,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     } catch (e: any) {
       if (alive.current && e?.name !== 'AbortError') setSessionErrors(current => ({ ...current, [sessionId]: e.message || 'Không thể nhận phản hồi AI.' }));
     }
-    finally { abortRef.current = null; lock.current = false; if (alive.current) { setBusy(false); setBusySessionId(''); } }
+    finally { abortRef.current = null; lock.current = false; if (alive.current) { setBusy(false); setBusySessionId(''); setStreamingText(''); } }
   };
 
   const createNewSession = () => {
@@ -346,7 +349,9 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
               </div>)}
           {activeBusy && <div role="status" className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center shrink-0"><Bot className="w-4 h-4" /></div>
-            <div className="flex items-center gap-1.5 pt-3"><span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" /><span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:120ms]" /><span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:240ms]" /></div>
+            {streamingText
+              ? <div className="min-w-0 flex-1 text-sm text-slate-800"><div className="text-xs font-semibold text-slate-500 mb-2">AI PM <span className="font-normal">· {activeModel} · đang trả lời</span></div><MessageBody text={streamingText} /></div>
+              : <div className="flex items-center gap-1.5 pt-3"><span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" /><span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:120ms]" /><span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:240ms]" /></div>}
           </div>}
           <div ref={bottom} />
         </div>}

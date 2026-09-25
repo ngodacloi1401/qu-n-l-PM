@@ -86,9 +86,9 @@ test('ten thousand project issues keep complete aggregates with a bounded detail
   const payload = buildAIChatPayload([{ role: 'user', text: 'Tổng hợp toàn dự án' }], 'Large Project', issues, [], 10_000, 'gemini-2.5-flash', { loadedCount: 10_000 });
   assert.equal(payload.context.isComplete, true);
   assert.equal(payload.context.allIssueCount, 10_000);
-  assert.equal(payload.context.issueRows.length, 200);
-  assert.equal(payload.context.includedIssueCount, 200);
-  assert.equal(payload.context.omittedIssueCount, 9800);
+  assert.equal(payload.context.issueRows.length, 120);
+  assert.equal(payload.context.includedIssueCount, 120);
+  assert.equal(payload.context.omittedIssueCount, 9880);
   assert.equal(payload.context.statuses.reduce((sum, row) => sum + row.count, 0), 10_000);
   assert.ok(Buffer.byteLength(JSON.stringify(payload)) <= 1_000_000);
 });
@@ -100,7 +100,7 @@ test('chat validation rejects invalid roles and keeps complete counts within a b
   const issue = { id: 123, subject: 'ữ'.repeat(1000), status: { id: 1, name: 'QA Verified' }, tracker: { id: 4, name: 'Task' }, project: { id: 84, name: 'Test' }, priority: { id: 1, name: 'Normal' } } as RedmineIssue;
   const payload = buildAIChatPayload(messages, 'Test', Array(5000).fill(issue), [], 6650, 'gemini-2.5-flash');
   assert.ok(Buffer.byteLength(JSON.stringify(payload)) <= 1_000_000);
-  assert.equal(payload.context.issueRows.length, 200);
+  assert.equal(payload.context.issueRows.length, 120);
   assert.equal(payload.context.allIssueCount, 5000);
   assert.equal(payload.context.isComplete, false);
   assert.equal(payload.statistics.totalIssues, 5000);
@@ -188,5 +188,29 @@ test('provider chat routes send the full PM prompt to OpenAI and Anthropic', asy
     assert.equal(captured[2].body.max_tokens, 4096);
     assert.match(captured[2].body.system, /issueRows/);
     assert.equal(captured[2].headers.get('anthropic-version'), '2023-06-01');
+  } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+test('Anthropic chat streams text deltas before completion', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (!String(url).includes('anthropic.com/v1/messages')) throw new Error(`Unexpected outbound request: ${url}`);
+    const events = [
+      { type: 'message_start', message: { id: 'msg_test' } },
+      { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Phản hồi ' } },
+      { type: 'content_block_delta', delta: { type: 'text_delta', text: 'đang chạy.' } },
+      { type: 'message_stop' },
+    ].map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('');
+    return new Response(events, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  };
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const port = (server.address() as { port: number }).port;
+  try {
+    const payload = buildAIChatPayload([{ role: 'user', text: 'Tóm tắt dự án' }], 'Test', [], [], 0, 'claude-sonnet-4-5-20250929', { loadedCount: 0 });
+    const response = await originalFetch(`http://127.0.0.1:${port}/api/ai/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-anthropic-api-key': 'anthropic-test', 'x-ai-stream': '1' }, body: JSON.stringify({ ...payload, provider: 'anthropic' }) });
+    assert.match(response.headers.get('content-type') || '', /application\/x-ndjson/);
+    const events = (await response.text()).trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(events.filter(event => event.type === 'delta').map(event => event.delta), ['Phản hồi ', 'đang chạy.']);
+    assert.equal(events.at(-1)?.type, 'done');
   } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
 });
