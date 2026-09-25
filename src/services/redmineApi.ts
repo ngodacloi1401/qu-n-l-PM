@@ -906,10 +906,10 @@ export interface GeminiPMResponse {
 
 export type AIPMResponse = GeminiPMResponse;
 
-export async function askAIChat(provider: AIProvider, messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}): Promise<AIPMResponse> {
+export async function askAIChat(provider: AIProvider, messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}, signal?: AbortSignal): Promise<AIPMResponse> {
   const payload = { ...buildAIChatPayload(messages, projectName, issues, statuses, totalAvailable, model, scope), provider };
   const url = provider === 'gemini' ? '/api/gemini/pm-insights' : '/api/ai/chat';
-  const res = await fetch(url, { method: 'POST', headers: getHeaders(), body: JSON.stringify(payload) });
+  const res = await fetch(url, { method: 'POST', headers: getHeaders(), body: JSON.stringify(payload), signal });
   return readAIReportResponse(res);
 }
 
