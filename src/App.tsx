@@ -117,7 +117,7 @@ export default function App() {
   const fetchRequestIdRef = useRef<number>(0);
   const filterRequestIdRef = useRef<number>(0);
   const lastLoadedProjectIdRef = useRef<string | null>(null);
-  const needsProjectIssues = activeView === 'kanban' || activeView === 'list' || activeView === 'analytics' || activeView === 'ai' || activeView === 'personal';
+  const needsProjectIssues = activeView === 'kanban' || activeView === 'list' || activeView === 'analytics' || activeView === 'ai';
 
   // Initial load of global Redmine metadata
   const loadInitialData = useCallback(async () => {
@@ -563,7 +563,6 @@ export default function App() {
         {/* View Switcher */}
         {activeView === 'personal' && (
           <PersonalTaskView
-            redmineIssues={issues}
             currentUser={currentUser}
             baseUrl={config.baseUrl}
             statuses={statuses}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, AlertCircle, Edit2, ArrowRight, ArrowLeft, Bug } from 'lucide-react';
+import { Clock, AlertCircle, Edit2, ArrowRight, ArrowLeft, ExternalLink } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import type { RedmineStatus } from '../../types/redmine';
 
@@ -8,6 +8,8 @@ interface PersonalTaskKanbanProps {
   statuses: RedmineStatus[];
   onUpdateTask: (task: PersonalTask) => void;
   onEditTask: (task: PersonalTask) => void;
+  readOnly?: boolean;
+  baseUrl?: string;
 }
 
 interface KanbanColConfig {
@@ -24,6 +26,8 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
   statuses,
   onUpdateTask,
   onEditTask,
+  readOnly = false,
+  baseUrl = '',
 }) => {
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -78,6 +82,7 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
   };
 
   const moveStatus = (task: PersonalTask, direction: 'next' | 'prev') => {
+    if (readOnly) return;
     const colOrder = ['new', 'in_progress', 'review', 'closed'];
     const currentCol = getColForTask(task.statusName);
     const currentIdx = colOrder.indexOf(currentCol);
@@ -98,6 +103,14 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
         updatedAt: new Date().toISOString(),
       });
     }
+  };
+
+  const openTask = (task: PersonalTask) => {
+    if (readOnly && task.redmineIssueId && baseUrl) {
+      window.open(`${baseUrl.replace(/\/$/, '')}/issues/${task.redmineIssueId}`, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    onEditTask(task);
   };
 
   return (
@@ -166,7 +179,7 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
 
                       {/* Title */}
                       <h5
-                        onClick={() => onEditTask(task)}
+                        onClick={() => openTask(task)}
                         className={`text-xs font-bold text-slate-900 group-hover:text-indigo-600 leading-snug cursor-pointer mb-1.5 ${
                           isClosed ? 'line-through text-slate-400' : ''
                         }`}
@@ -219,6 +232,11 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                         </div>
 
                         <div className="flex items-center gap-1">
+                          {readOnly ? (
+                            <button onClick={() => openTask(task)} title="Mở issue trên Redmine" className="inline-flex items-center gap-1 px-1.5 py-1 hover:bg-red-50 rounded text-red-600 hover:text-red-800 cursor-pointer">
+                              <ExternalLink className="w-3.5 h-3.5" /><span className="text-[10px] font-semibold">Redmine</span>
+                            </button>
+                          ) : <>
                           {col.id !== 'new' && (
                             <button
                               onClick={() => moveStatus(task, 'prev')}
@@ -244,6 +262,7 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                               <ArrowRight className="w-3.5 h-3.5" />
                             </button>
                           )}
+                          </>}
                         </div>
                       </div>
                     </div>

@@ -1,12 +1,10 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   FileSpreadsheet,
   Plus,
-  ArrowDownToLine,
   Download,
   Search,
   Filter,
-  Kanban,
   Calendar,
   Clock,
   AlertCircle,
@@ -14,9 +12,9 @@ import {
   Flame,
   Layers,
   RotateCcw,
-  User,
   FolderKanban,
   Globe,
+  RefreshCw,
 } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import type {
@@ -37,6 +35,8 @@ import {
   DEFAULT_REDMINE_TRACKERS,
   DEFAULT_REDMINE_CUSTOM_FIELDS,
   getStoredConfig,
+  fetchAllIssues,
+  type FetchProgress,
 } from '../../services/redmineApi';
 import {
   getSavedTasks,
@@ -47,12 +47,10 @@ import { exportPersonalTasksToExcel } from '../../services/personalTaskExcel';
 import { PersonalTaskKanban } from './PersonalTaskKanban';
 import { ExcelImportModal } from './ExcelImportModal';
 import { PersonalTaskModal } from './PersonalTaskModal';
-import { RedmineSyncModal } from './RedmineSyncModal';
 
 type SubTab = 'excel' | 'redmine';
 
 interface PersonalTaskViewProps {
-  redmineIssues: RedmineIssue[];
   currentUser: RedmineUser | null;
   baseUrl: string;
   statuses?: RedmineStatus[];
@@ -67,7 +65,6 @@ interface PersonalTaskViewProps {
 }
 
 export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
-  redmineIssues,
   currentUser,
   baseUrl,
   statuses = DEFAULT_REDMINE_STATUSES,
@@ -91,34 +88,28 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   );
 
   const [tasks, setTasks] = useState<PersonalTask[]>(() =>
-    getSavedTasks(userScopeKey, currentUserName)
+    getSavedTasks(userScopeKey, currentUserName).filter((task) => task.source !== 'redmine')
   );
   const [activeTab, setActiveTab] = useState<SubTab>('excel');
+  const activeStorageScopeRef = useRef(userScopeKey);
+  const skipNextStorageSaveRef = useRef(false);
 
   // Reload tasks when user or scope changes
   useEffect(() => {
     const freshApiKey = getStoredConfig().apiKey;
     const freshScopeKey = getUserScopeKey(currentUser, freshApiKey);
-    setTasks(getSavedTasks(freshScopeKey, currentUserName));
+    if (activeStorageScopeRef.current === freshScopeKey) return;
+    activeStorageScopeRef.current = freshScopeKey;
+    skipNextStorageSaveRef.current = true;
+    setTasks(getSavedTasks(freshScopeKey, currentUserName).filter((task) => task.source !== 'redmine'));
   }, [userScopeKey, currentUserName, currentUser]);
-
-  // Clean up any legacy fake weeks on redmine tasks from local storage
-  useEffect(() => {
-    setTasks((prev) => {
-      let changed = false;
-      const cleaned = prev.map((t) => {
-        if (t.source === 'redmine' && t.week) {
-          changed = true;
-          return { ...t, week: '' };
-        }
-        return t;
-      });
-      return changed ? cleaned : prev;
-    });
-  }, []);
 
   // Save changes to localStorage whenever tasks change (scoped by user account)
   useEffect(() => {
+    if (skipNextStorageSaveRef.current) {
+      skipNextStorageSaveRef.current = false;
+      return;
+    }
     saveTasks(tasks, userScopeKey);
   }, [tasks, userScopeKey]);
 
@@ -134,13 +125,45 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   // Modals
   const [showImportModal, setShowImportModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showRedmineSyncModal, setShowRedmineSyncModal] = useState(false);
   const [editingTask, setEditingTask] = useState<PersonalTask | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
+  const [liveRedmineIssues, setLiveRedmineIssues] = useState<RedmineIssue[]>([]);
+  const [isRedmineLoading, setIsRedmineLoading] = useState(false);
+  const [redmineError, setRedmineError] = useState<string | null>(null);
+  const [redmineProgress, setRedmineProgress] = useState<FetchProgress | null>(null);
+  const [redmineReload, setRedmineReload] = useState(0);
+  const redmineRequestRef = useRef(0);
+  const forceRedmineRef = useRef(false);
+
+  useEffect(() => {
+    if (activeTab !== 'redmine') {
+      redmineRequestRef.current += 1;
+      setIsRedmineLoading(false);
+      setRedmineProgress(null);
+      return;
+    }
+    const requestId = ++redmineRequestRef.current;
+    const isCurrent = () => redmineRequestRef.current === requestId;
+    const force = forceRedmineRef.current;
+    forceRedmineRef.current = false;
+    setIsRedmineLoading(true);
+    setRedmineError(null);
+    setRedmineProgress(null);
+    fetchAllIssues({
+      project_id: selectedProjectId && selectedProjectId !== 'all' ? selectedProjectId : undefined,
+      assigned_to_id: currentUser?.id || 'me',
+      status_id: '*',
+    }, (progress) => { if (isCurrent()) setRedmineProgress(progress); }, Number.MAX_SAFE_INTEGER, {
+      force,
+      onCached: (snapshot) => { if (isCurrent()) setLiveRedmineIssues(snapshot.issues); },
+      onBatch: (batch) => { if (isCurrent()) setLiveRedmineIssues(batch); },
+    }).then((result) => { if (isCurrent()) setLiveRedmineIssues(result.issues); })
+      .catch((error) => { if (isCurrent()) setRedmineError(error?.message || 'Không thể tải công việc Redmine.'); })
+      .finally(() => { if (isCurrent()) { setIsRedmineLoading(false); setRedmineProgress(null); } });
+  }, [activeTab, selectedProjectId, currentUser?.id, redmineReload]);
 
   // Split tasks by source
   const excelTasks = useMemo(() => tasks.filter((t) => t.source === 'excel' || t.source === 'manual'), [tasks]);
-  const redmineTasks = useMemo(() => tasks.filter((t) => t.source === 'redmine'), [tasks]);
 
   // Find currently selected project object
   const currentProjectObj = useMemo(() => {
@@ -149,35 +172,47 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   }, [selectedProjectId, projects]);
 
   // Filter tasks by selected project (from top header)
-  const isTaskMatchingProject = useCallback((t: PersonalTask) => {
-    if (!selectedProjectId || selectedProjectId === 'all') return true;
-    // Match by projectId if available
-    if (t.projectId && String(t.projectId) === String(selectedProjectId)) return true;
-    // Match by projectName if available
-    if (currentProjectObj && t.projectName) {
-      if (t.projectName.toLowerCase() === currentProjectObj.name.toLowerCase()) return true;
-    }
-    // Match by category if it equals project name
-    if (currentProjectObj && t.category) {
-      if (t.category.toLowerCase() === currentProjectObj.name.toLowerCase()) return true;
-    }
-    return false;
-  }, [selectedProjectId, currentProjectObj]);
-
-  const scopedExcelTasks = useMemo(() => {
-    if (!selectedProjectId || selectedProjectId === 'all') return excelTasks;
-    // For Excel tasks: if any tasks have project info, filter by it; otherwise keep all
-    const hasAnyProjectInfo = excelTasks.some((t) => t.projectId || t.projectName);
-    if (!hasAnyProjectInfo) return excelTasks;
-    // Rows without an explicit Project column are personal tasks and remain
-    // visible in every selected project. Category alone must not hide them.
-    return excelTasks.filter((task) => (!task.projectId && !task.projectName) || isTaskMatchingProject(task));
-  }, [excelTasks, selectedProjectId, isTaskMatchingProject]);
-
-  const scopedRedmineTasks = useMemo(() => {
-    if (!selectedProjectId || selectedProjectId === 'all') return redmineTasks;
-    return redmineTasks.filter(isTaskMatchingProject);
-  }, [redmineTasks, selectedProjectId, isTaskMatchingProject]);
+  // Excel/manual rows are their own local source and never inherit the selected
+  // Redmine project. Redmine rows are rebuilt from live issues instead of copied
+  // into local storage, so each tab has one authoritative source.
+  const scopedExcelTasks = excelTasks;
+  const scopedRedmineTasks = useMemo<PersonalTask[]>(() => liveRedmineIssues
+    .filter((issue) => {
+      if (currentUser && issue.assigned_to?.id !== currentUser.id) return false;
+      if (selectedProjectId && selectedProjectId !== 'all') {
+        return String(issue.project?.id || '') === String(selectedProjectId);
+      }
+      return true;
+    })
+    .map((issue) => ({
+      id: `redmine_${issue.id}`,
+      week: '',
+      assignedDate: issue.start_date || issue.created_on?.slice(0, 10) || '',
+      category: issue.category?.name || 'Không có category',
+      title: issue.subject,
+      description: issue.description || '',
+      trackerId: issue.tracker?.id,
+      trackerName: issue.tracker?.name || 'Task',
+      statusId: issue.status?.id,
+      statusName: issue.status?.name || 'New',
+      priorityId: issue.priority?.id,
+      priorityName: issue.priority?.name || 'Normal',
+      assigneeId: issue.assigned_to?.id,
+      assigneeName: issue.assigned_to?.name || '',
+      parentTaskId: issue.parent?.id,
+      targetVersionId: issue.fixed_version?.id,
+      targetVersionName: issue.fixed_version?.name,
+      doneRatio: issue.done_ratio || 0,
+      estimatedHours: issue.estimated_hours,
+      resultNote: '',
+      dueDate: issue.due_date || '',
+      source: 'redmine',
+      redmineIssueId: issue.id,
+      projectId: issue.project?.id,
+      projectName: issue.project?.name,
+      createdAt: issue.created_on || '',
+      updatedAt: issue.updated_on || '',
+    })), [liveRedmineIssues, currentUser, selectedProjectId]);
 
   const activeTasks = activeTab === 'excel' ? scopedExcelTasks : scopedRedmineTasks;
 
@@ -283,10 +318,9 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
 
   const handleImportTasks = (newTasks: PersonalTask[], mode: 'append' | 'replace') => {
     if (mode === 'replace') {
-      // Replace only excel/manual tasks, keep redmine tasks
-      setTasks((prev) => [...newTasks, ...prev.filter((t) => t.source === 'redmine')]);
+      setTasks(newTasks);
     } else {
-      setTasks((prev) => [...newTasks, ...prev]);
+      setTasks((prev) => [...newTasks, ...prev.filter((task) => task.source !== 'redmine')]);
     }
     setActiveTab('excel');
     setSelectedWeek('all');
@@ -305,14 +339,8 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   };
 
   const handleResetSampleData = () => {
-    if (activeTab === 'excel') {
-      if (confirm('Xóa toàn bộ công việc cá nhân (Excel/thủ công)?')) {
-        setTasks((prev) => prev.filter((t) => t.source === 'redmine'));
-      }
-    } else {
-      if (confirm('Xóa toàn bộ công việc lấy từ Redmine?')) {
-        setTasks((prev) => prev.filter((t) => t.source !== 'redmine'));
-      }
+    if (confirm('Xóa toàn bộ công việc Excel và công việc tạo thủ công?')) {
+      setTasks([]);
     }
   };
 
@@ -384,29 +412,24 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           <button type="button" onClick={() => setImportNotice(null)} className="text-emerald-700 underline text-xs">Đóng</button>
         </div>
       )}
-      {/* User Account Scope Indicator Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-3 border border-slate-800">
+      {/* Source scope: Excel is local; Redmine is live and project-scoped. */}
+      <div className={`px-5 py-3.5 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-3 border ${activeTab === 'excel' ? 'bg-emerald-950 text-white border-emerald-900' : 'bg-slate-900 text-white border-slate-800'}`}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 font-bold text-sm">
-            {currentUser?.firstname ? currentUser.firstname.charAt(0).toUpperCase() : 'U'}
+          <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${activeTab === 'excel' ? 'bg-emerald-500/20 border-emerald-400/30 text-emerald-200' : 'bg-red-500/20 border-red-400/30 text-red-200'}`}>
+            {activeTab === 'excel' ? <FileSpreadsheet className="w-5 h-5" /> : <Globe className="w-5 h-5" />}
           </div>
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-semibold text-slate-300">Việc cá nhân của:</span>
-              <span className="text-xs font-bold text-white tracking-wide">
-                {currentUserName || currentUser?.login || 'Người dùng Redmine'}
-              </span>
-              {currentUser?.id && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-500/30 text-indigo-300 border border-indigo-400/30 font-semibold">
-                  Redmine #{currentUser.id}
-                </span>
-              )}
-            </div>
+            <div className="text-sm font-bold">{activeTab === 'excel' ? 'Kế hoạch từ Excel và công việc tạo thủ công' : 'Công việc trực tiếp từ Redmine'}</div>
             <p className="text-[11px] text-slate-400">
-              Dữ liệu được lưu độc lập theo tài khoản Redmine / API Key hiện tại
+              {activeTab === 'excel'
+                ? 'Lưu riêng trên trình duyệt, không phụ thuộc dự án Redmine đang chọn.'
+                : `${currentUserName || currentUser?.login || 'Người dùng hiện tại'} · ${currentProjectObj?.name || 'Tất cả dự án'} · Chỉ đọc trong màn này`}
             </p>
           </div>
         </div>
+        <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${activeTab === 'excel' ? 'bg-emerald-900 border-emerald-700 text-emerald-100' : 'bg-red-950 border-red-800 text-red-100'}`}>
+          Nguồn: {activeTab === 'excel' ? 'Excel / Local' : 'Redmine Live'}
+        </span>
       </div>
 
       {/* Sub-tabs: Excel vs Redmine */}
@@ -420,7 +443,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           }`}
         >
           <FolderKanban className="w-4 h-4" />
-          <span>CV cá nhân (Excel)</span>
+          <span>Kế hoạch Excel</span>
           <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'excel' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'
           }`}>
@@ -436,7 +459,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           }`}
         >
           <Globe className="w-4 h-4" />
-          <span>Việc Redmine gán cho tôi</span>
+          <span>Việc Redmine</span>
           <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'redmine' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-500'
           }`}>
@@ -561,31 +584,38 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
 
           {activeTab === 'redmine' && (
             <button
-              onClick={() => setShowRedmineSyncModal(true)}
+              onClick={() => { forceRedmineRef.current = true; setRedmineReload((value) => value + 1); }}
+              disabled={isRedmineLoading}
               className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
             >
-              <ArrowDownToLine className="w-4 h-4" />
-              <span>Lấy việc từ Redmine</span>
+              <RefreshCw className={`w-4 h-4 ${isRedmineLoading ? 'animate-spin' : ''}`} />
+              <span>{isRedmineLoading ? 'Đang đồng bộ…' : 'Làm mới từ Redmine'}</span>
             </button>
           )}
 
-          <button
-            onClick={handleExportExcel}
-            title="Xuất danh sách ra file Excel"
-            className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl border border-slate-300 transition-colors cursor-pointer"
-          >
-            <Download className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={handleResetSampleData}
-            title={activeTab === 'excel' ? 'Xóa toàn bộ CV cá nhân' : 'Xóa toàn bộ việc Redmine'}
-            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
+          {activeTab === 'excel' && <>
+            <button onClick={handleExportExcel} className="inline-flex items-center gap-1.5 px-3 py-2 text-slate-700 hover:bg-slate-100 rounded-xl border border-slate-300 text-xs font-semibold transition-colors cursor-pointer">
+              <Download className="w-4 h-4" /><span>Xuất Excel</span>
+            </button>
+            <button onClick={handleResetSampleData} title="Xóa toàn bộ dữ liệu Excel/thủ công" className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors cursor-pointer">
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </>}
         </div>
       </div>
+
+      {activeTab === 'redmine' && isRedmineLoading && (
+        <div role="status" className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+          <RefreshCw className="w-4 h-4 animate-spin" />
+          <span>{redmineProgress ? `Đang tải việc Redmine: ${redmineProgress.loaded}/${redmineProgress.total}` : 'Đang kết nối Redmine…'}</span>
+        </div>
+      )}
+      {activeTab === 'redmine' && redmineError && (
+        <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-xl text-sm flex items-center justify-between gap-3">
+          <span>{redmineError}</span>
+          <button type="button" onClick={() => { forceRedmineRef.current = true; setRedmineReload((value) => value + 1); }} className="font-semibold underline">Thử lại</button>
+        </div>
+      )}
 
       {/* Filter Row: Dynamic filters matching tab content */}
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-3 text-xs">
@@ -718,12 +748,12 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           <h4 className="text-base font-bold text-slate-700 mb-1">
             {activeTab === 'excel'
               ? 'Chưa có công việc cá nhân nào'
-              : 'Chưa có việc nào từ Redmine'}
+              : (isRedmineLoading ? 'Đang tải việc từ Redmine' : 'Không có việc Redmine phù hợp')}
           </h4>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
             {activeTab === 'excel'
               ? 'Nhấn "Nhập từ Excel" để import danh sách công việc, hoặc "Thêm việc" để tạo thủ công.'
-              : 'Nhấn "Lấy việc từ Redmine" để đồng bộ các issue được gán cho bạn.'}
+              : 'Tab này chỉ hiển thị issue Redmine được giao cho bạn trong dự án đang chọn.'}
           </p>
         </div>
       )}
@@ -734,7 +764,10 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           tasks={filteredTasks}
           statuses={statuses}
           onUpdateTask={handleUpdateTask}
+          readOnly={activeTab === 'redmine'}
+          baseUrl={baseUrl}
           onEditTask={(t) => {
+            if (activeTab === 'redmine') return;
             setEditingTask(t);
             setShowCreateModal(true);
           }}
@@ -769,21 +802,6 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
         />
       )}
 
-      {showRedmineSyncModal && (
-        <RedmineSyncModal
-          issues={redmineIssues}
-          currentUser={currentUser}
-          baseUrl={baseUrl}
-          onClose={() => setShowRedmineSyncModal(false)}
-          onImport={(newTasks) => {
-            handleImportTasks(newTasks, 'append');
-            switchTab('redmine');
-          }}
-          existingTaskRedmineIds={new Set(tasks.map((t) => t.redmineIssueId).filter((id): id is number => typeof id === 'number'))}
-          selectedProjectId={selectedProjectId}
-          projects={projects}
-        />
-      )}
     </div>
   );
 };
