@@ -317,7 +317,7 @@ app.post('/api/gemini/pm-insights', async (req: Request, res: Response) => {
     const ai = new GoogleGenAI({
       apiKey,
       httpOptions: {
-        timeout: 28000,
+        timeout: mode === 'chat' ? 50000 : 28000,
         retryOptions: { attempts: 1 },
         headers: {
           'User-Agent': 'aistudio-build',
@@ -364,7 +364,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
         const generatePromise = ai.models.generateContent({
           model: candidate,
           contents: chat ? chat.contents : prompt,
-          config: chat ? { systemInstruction: chat.systemInstruction, maxOutputTokens: 8192 } : undefined,
+          config: chat ? { systemInstruction: chat.systemInstruction, maxOutputTokens: 4096 } : undefined,
         });
         const response: any = await generatePromise;
         if (response && response.text) {
@@ -374,7 +374,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
         }
       } catch (err: any) {
         lastError = err;
-        if (![400, 404, 429, 500, 502, 503, 504].includes(Number(err?.status || err?.code))) break;
+        if (![400, 404].includes(Number(err?.status || err?.code))) break;
       }
     }
 

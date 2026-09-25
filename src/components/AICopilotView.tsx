@@ -65,7 +65,9 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const [storageKey, setStorageKey] = useState('');
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busySessionId, setBusySessionId] = useState('');
   const [error, setError] = useState('');
+  const [sessionErrors, setSessionErrors] = useState<Record<string, string>>({});
   const [copiedMessage, setCopiedMessage] = useState<number | null>(null);
   const [downloading, setDownloading] = useState('');
   const lock = useRef(false);
@@ -141,11 +143,12 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const submit = async (text: string, retry = false) => {
     if (lock.current || isDataLoading || !active || !storageKey || !text.trim()) return;
     if (!activeModel) { setError('Nhập mã model AI trước khi gửi.'); return; }
-    lock.current = true; setBusy(true); setError('');
+    lock.current = true; setBusy(true); setBusySessionId(active.id); setError('');
     const controller = new AbortController();
     abortRef.current = controller;
     const messages: ChatMessage[] = retry ? active.messages : [...active.messages, { role: 'user', text: text.trim().slice(0, 4000) }];
     const sessionId = active.id;
+    setSessionErrors(current => ({ ...current, [sessionId]: '' }));
     const pending = { ...store, sessions: store.sessions.map(s => s.id === sessionId ? { ...s, title: s.messages.length ? s.title : text.trim().slice(0, 60), messages } : s) };
     setStore(pending); if (!retry) setDraft('');
     await writeLocalCache(storageKey, pending);
@@ -165,8 +168,10 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
         await writeLocalCache(storageKey, completed);
         if (alive.current) setStore(completed);
       }
-    } catch (e: any) { if (alive.current && e?.name !== 'AbortError') setError(e.message || 'Không thể nhận phản hồi AI.'); }
-    finally { abortRef.current = null; lock.current = false; if (alive.current) setBusy(false); }
+    } catch (e: any) {
+      if (alive.current && e?.name !== 'AbortError') setSessionErrors(current => ({ ...current, [sessionId]: e.message || 'Không thể nhận phản hồi AI.' }));
+    }
+    finally { abortRef.current = null; lock.current = false; if (alive.current) { setBusy(false); setBusySessionId(''); } }
   };
 
   const createNewSession = () => {
@@ -209,20 +214,23 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     finally { setDownloading(''); }
   };
 
+  const activeBusy = busy && busySessionId === active?.id;
+  const visibleError = (active?.id && sessionErrors[active.id]) || error;
+
   return <div className="h-full min-h-0 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex">
     <aside className="hidden lg:flex min-h-0 w-64 shrink-0 bg-slate-950 text-white flex-col border-r border-slate-800 overflow-hidden">
       <div className="p-3 border-b border-slate-800">
-        <button onClick={createNewSession} disabled={busy || !storageKey} className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-white text-slate-900 px-3 py-2.5 text-sm font-semibold hover:bg-slate-100 disabled:opacity-40">
+        <button onClick={createNewSession} disabled={!storageKey} className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-white text-slate-900 px-3 py-2.5 text-sm font-semibold hover:bg-slate-100 disabled:opacity-40">
           <Plus className="w-4 h-4" />Cuộc trò chuyện mới
         </button>
       </div>
       <div className="px-3 pt-4 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Lịch sử trò chuyện</div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3 space-y-1">
         {store.sessions.map(session => <div key={session.id} className={`group flex items-center rounded-lg ${session.id === store.activeId ? 'bg-slate-800' : 'hover:bg-slate-900'}`}>
-          <button disabled={busy} onClick={() => { setStore(current => ({ ...current, activeId: session.id })); setError(''); setDraft(''); }} className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2.5 text-left text-sm disabled:opacity-50">
-            <MessageSquare className="w-4 h-4 shrink-0 text-slate-400" /><span className="truncate">{session.title}</span>
+          <button onClick={() => { setStore(current => ({ ...current, activeId: session.id })); setError(''); setDraft(''); }} className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2.5 text-left text-sm">
+            {busySessionId === session.id ? <RefreshCw className="w-4 h-4 shrink-0 text-indigo-300 animate-spin" /> : <MessageSquare className="w-4 h-4 shrink-0 text-slate-400" />}<span className="truncate">{session.title}</span>
           </button>
-          <button aria-label={`Xóa ${session.title}`} disabled={busy} onClick={() => deleteSession(session.id)} className="p-2 mr-1 text-slate-500 hover:text-rose-300 opacity-0 group-hover:opacity-100 focus:opacity-100 disabled:hidden"><Trash2 className="w-3.5 h-3.5" /></button>
+          <button aria-label={`Xóa ${session.title}`} disabled={busySessionId === session.id} onClick={() => deleteSession(session.id)} className="p-2 mr-1 text-slate-500 hover:text-rose-300 opacity-0 group-hover:opacity-100 focus:opacity-100 disabled:hidden"><Trash2 className="w-3.5 h-3.5" /></button>
         </div>)}
       </div>
       <div className="p-3 border-t border-slate-800 text-[11px] text-slate-400 flex items-start gap-2">
@@ -241,10 +249,10 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
-          <select aria-label="Phiên làm việc" value={store.activeId} disabled={busy || !storageKey} onChange={e => { setStore(current => ({ ...current, activeId: e.target.value })); setError(''); setDraft(''); }} className="lg:hidden max-w-36 border border-slate-200 rounded-lg px-2 py-2 text-xs bg-slate-50">
+          <select aria-label="Phiên làm việc" value={store.activeId} disabled={!storageKey} onChange={e => { setStore(current => ({ ...current, activeId: e.target.value })); setError(''); setDraft(''); }} className="lg:hidden max-w-36 border border-slate-200 rounded-lg px-2 py-2 text-xs bg-slate-50">
             {store.sessions.map(session => <option key={session.id} value={session.id}>{session.title}</option>)}
           </select>
-          <button onClick={createNewSession} disabled={busy || !storageKey} className="lg:hidden p-2 rounded-lg border border-slate-200 text-slate-600"><Plus className="w-4 h-4" /></button>
+          <button onClick={createNewSession} disabled={!storageKey} className="lg:hidden p-2 rounded-lg border border-slate-200 text-slate-600"><Plus className="w-4 h-4" /></button>
           <select id="ai-provider-select" aria-label="Nhà cung cấp AI" value={provider} disabled={busy} onChange={e => setProvider(e.target.value as AIProvider)} className="max-w-40 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700">
             {PROVIDERS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
@@ -295,7 +303,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
                   </div>
                 </div>
               </div>)}
-          {busy && <div role="status" className="flex items-start gap-3">
+          {activeBusy && <div role="status" className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center shrink-0"><Bot className="w-4 h-4" /></div>
             <div className="flex items-center gap-1.5 pt-3"><span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" /><span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:120ms]" /><span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce [animation-delay:240ms]" /></div>
           </div>}
@@ -305,12 +313,12 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
 
       <footer className="border-t border-slate-200 bg-white px-3 sm:px-5 py-3">
         <div className="max-w-3xl mx-auto">
-          {error && <div role="alert" className="mb-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2.5">{error}{active?.messages.at(-1)?.role === 'user' && <button disabled={busy} onClick={() => void submit(active.messages.at(-1)!.text, true)} className="ml-3 font-semibold underline">Thử lại</button>}</div>}
+          {visibleError && <div role="alert" className="mb-2 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2.5">{visibleError}{active?.messages.at(-1)?.role === 'user' && <button disabled={busy} onClick={() => void submit(active.messages.at(-1)!.text, true)} className="ml-3 font-semibold underline">Thử lại</button>}</div>}
           <form onSubmit={event => { event.preventDefault(); void submit(draft); }} className="relative rounded-2xl border border-slate-300 bg-white shadow-sm focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100">
-            <textarea ref={textareaRef} aria-label="Tin nhắn cho AI" value={draft} onChange={event => setDraft(event.target.value)} maxLength={4000} disabled={busy || !storageKey} rows={1} placeholder={isDataLoading ? 'Đang chuẩn bị dữ liệu dự án…' : 'Nhắn tin cho AI PM…'} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(draft); } }} className="block w-full resize-none bg-transparent pl-4 pr-14 py-3.5 text-sm min-h-12 max-h-44 focus:outline-none disabled:bg-slate-50 rounded-2xl" />
-            {busy
+            <textarea ref={textareaRef} aria-label="Tin nhắn cho AI" value={draft} onChange={event => setDraft(event.target.value)} maxLength={4000} disabled={!storageKey} rows={1} placeholder={isDataLoading ? 'Đang chuẩn bị dữ liệu dự án…' : busy && !activeBusy ? 'AI đang trả lời ở cuộc trò chuyện khác…' : 'Nhắn tin cho AI PM…'} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(draft); } }} className="block w-full resize-none bg-transparent pl-4 pr-14 py-3.5 text-sm min-h-12 max-h-44 focus:outline-none disabled:bg-slate-50 rounded-2xl" />
+            {activeBusy
               ? <button type="button" onClick={() => abortRef.current?.abort()} aria-label="Dừng trả lời" title="Dừng trả lời" className="absolute right-2 bottom-2 w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center"><Square className="w-3 h-3 fill-current" /></button>
-              : <button type="submit" disabled={isDataLoading || !storageKey || !draft.trim()} aria-label="Gửi tin nhắn" title="Gửi tin nhắn" className="absolute right-2 bottom-2 w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400"><Send className="w-4 h-4" /></button>}
+              : <button type="submit" disabled={busy || isDataLoading || !storageKey || !draft.trim()} aria-label="Gửi tin nhắn" title={busy ? 'Đợi câu trả lời hiện tại hoặc bấm Dừng tại phiên đang xử lý' : 'Gửi tin nhắn'} className="absolute right-2 bottom-2 w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400"><Send className="w-4 h-4" /></button>}
           </form>
           <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-slate-400">
             <span>Enter để gửi · Shift + Enter để xuống dòng</span><span>{activeModel || 'Chưa chọn model'}</span>

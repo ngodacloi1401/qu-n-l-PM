@@ -58,6 +58,23 @@ test('chat falls back to a model allowed by the active API key when the selected
   } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 
+test('Gemini timeout returns immediately without multiplying delay across fallback models', async () => {
+  const originalFetch = globalThis.fetch;
+  const attempted: string[] = [];
+  globalThis.fetch = async (url) => {
+    attempted.push(decodeURIComponent(String(url)).match(/models\/(.*?):generateContent/)?.[1] || '');
+    return new Response(JSON.stringify({ error: { code: 504, message: 'timed out', status: 'DEADLINE_EXCEEDED' } }), { status: 504, headers: { 'Content-Type': 'application/json' } });
+  };
+  const server = app.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const port = (server.address() as { port: number }).port;
+  try {
+    const payload = buildAIChatPayload([{ role: 'user', text: 'Phân tích dự án' }], 'Test', [], [], 0, 'gemini-2.5-flash', { loadedCount: 0, availableModels: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'] });
+    const response = await originalFetch(`http://127.0.0.1:${port}/api/gemini/pm-insights`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-gemini-api-key': 'test-only-key' }, body: JSON.stringify(payload) });
+    assert.equal(response.status, 504);
+    assert.deepEqual(attempted, ['gemini-2.5-flash']);
+  } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
 test('ten thousand project issues remain complete in the compact AI context', () => {
   const issues = Array.from({ length: 10_000 }, (_, index) => ({
     id: index + 1,
@@ -158,11 +175,13 @@ test('provider chat routes send the full PM prompt to OpenAI and Anthropic', asy
     assert.equal((await anthropic.json()).result, 'Claude đã phân tích dự án.');
 
     assert.equal(captured[0].body.model, 'gpt-5.2');
+    assert.equal(captured[0].body.max_output_tokens, 4096);
     assert.match(captured[0].body.instructions, /Test Project/);
     assert.equal(captured[0].body.store, false);
     assert.equal(captured[1].body.model, 'gpt-5.3-codex');
     assert.match(captured[1].body.instructions, /allIssues/);
     assert.equal(captured[2].body.model, 'claude-sonnet-5');
+    assert.equal(captured[2].body.max_tokens, 4096);
     assert.match(captured[2].body.system, /allIssues/);
     assert.equal(captured[2].headers.get('anthropic-version'), '2023-06-01');
   } finally { globalThis.fetch = originalFetch; await new Promise<void>(resolve => server.close(() => resolve())); }

@@ -56,11 +56,21 @@ function responseError(provider: AIProvider, response: Response, detail: string)
   return Object.assign(new Error(detail || `${label} API không phản hồi được.`), { status: status || 502 });
 }
 
+async function fetchAI(url: string, init: RequestInit) {
+  try { return await fetch(url, { ...init, signal: AbortSignal.timeout(50_000) }); }
+  catch (error: any) {
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+      throw Object.assign(new Error('AI chưa trả lời xong trong giới hạn 50 giây. Hãy thử lại hoặc chọn model nhanh hơn.'), { status: 504 });
+    }
+    throw error;
+  }
+}
+
 export async function generateOpenAIResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>) {
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  const response = await fetchAI('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, instructions: systemInstruction, input: messages, max_output_tokens: 8192, store: false }),
+    body: JSON.stringify({ model, instructions: systemInstruction, input: messages, max_output_tokens: 4096, store: false }),
   });
   const data: any = await response.json().catch(() => ({}));
   if (!response.ok) throw responseError('openai', response, data?.error?.message);
@@ -72,10 +82,10 @@ export async function generateOpenAIResponse(apiKey: string, model: string, syst
 }
 
 export async function generateAnthropicResponse(apiKey: string, model: string, systemInstruction: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetchAI('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, system: systemInstruction, messages, max_tokens: 8192 }),
+    body: JSON.stringify({ model, system: systemInstruction, messages, max_tokens: 4096 }),
   });
   const data: any = await response.json().catch(() => ({}));
   if (!response.ok) throw responseError('anthropic', response, data?.error?.message);

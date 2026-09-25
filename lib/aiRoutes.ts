@@ -52,7 +52,7 @@ export function registerProviderAIRoutes(app: Express) {
         return res.json({ result, usedModel: candidate, requestedModel: primaryModel, fallbackOccurred: candidate !== primaryModel });
       } catch (error: any) {
         lastError = error;
-        if (![400, 404, 429, 500, 502, 503, 504].includes(Number(error?.status))) break;
+        if (![400, 404].includes(Number(error?.status))) break;
       }
     }
     return res.status(Number(lastError?.status) || 502).json({ error: lastError?.message || `${providerLabel(provider)} không phản hồi được.` });
