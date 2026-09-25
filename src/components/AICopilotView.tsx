@@ -4,11 +4,19 @@ import type { RedmineIssue, RedmineProject, RedmineStatus } from '../types/redmi
 import { FALLBACK_AI_MODELS, askAIChat, getAvailableAIModels, getStoredConfig, type AIProvider } from '../services/redmineApi';
 import type { ChatMessage, ChatScope } from '../services/aiPayload';
 import { cacheScope, readLocalCache, writeLocalCache } from '../services/localCache';
-import { downloadAnswerAsDocx, downloadChatArtifact, extractChatArtifacts } from '../services/chatArtifacts';
+import { downloadAnswerAsDocx, downloadChatArtifact, ensureRequestedChatArtifacts } from '../services/chatArtifacts';
 
 interface Session { id: string; title: string; messages: ChatMessage[] }
 interface SessionStore { sessions: Session[]; activeId: string }
 const newSession = (): Session => ({ id: crypto.randomUUID(), title: 'Phiên mới', messages: [] });
+const upgradeSessionArtifacts = (session: Session): Session => ({
+  ...session,
+  messages: session.messages.map((message, index, messages) => {
+    if (message.role !== 'assistant' || message.artifacts?.length || messages[index - 1]?.role !== 'user') return message;
+    const parsed = ensureRequestedChatArtifacts(messages[index - 1].text, message.text);
+    return parsed.artifacts.length ? { ...message, text: parsed.text, artifacts: parsed.artifacts } : message;
+  }),
+});
 const PROVIDER_KEY = 'redmine_ai_provider';
 const PROVIDERS: Array<{ id: AIProvider; name: string }> = [
   { id: 'gemini', name: 'Google Gemini' },
@@ -111,7 +119,10 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
       const key = `${await cacheScope(config.baseUrl, config.apiKey)}:ai-sessions:${projectId}`;
       const saved = await readLocalCache<SessionStore>(key);
       if (cancelled) return;
-      if (saved?.sessions?.length) setStore({ sessions: saved.sessions, activeId: saved.sessions.some(s => s.id === saved.activeId) ? saved.activeId : saved.sessions[0].id });
+      if (saved?.sessions?.length) {
+        const sessions = saved.sessions.map(upgradeSessionArtifacts);
+        setStore({ sessions, activeId: sessions.some(s => s.id === saved.activeId) ? saved.activeId : sessions[0].id });
+      }
       else { const session = newSession(); setStore({ sessions: [session], activeId: session.id }); }
       setStorageKey(key);
     })().catch(() => { if (!cancelled) setError('Không thể mở phiên AI. Hãy tải lại trang.'); });
@@ -145,7 +156,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
         setModel(response.usedModel); setCustomMode(!option); if (!option) setCustom(response.usedModel);
         setModelNotice(`Model ${activeModel} không dùng được. Hệ thống đã chuyển sang ${option?.name || response.usedModel}.`);
       }
-      const parsed = extractChatArtifacts(response.result);
+      const parsed = ensureRequestedChatArtifacts(messages.at(-1)?.text || text, response.result);
       const answer: ChatMessage = { role: 'assistant', text: parsed.text, model: response.usedModel || activeModel, artifacts: parsed.artifacts };
       const latest = await readLocalCache<SessionStore>(storageKey) || pending;
       const existing = latest.sessions.find(s => s.id === sessionId);

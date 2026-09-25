@@ -12,6 +12,18 @@ export interface ChatArtifact {
 }
 export interface ChatMessage { role: 'user' | 'assistant'; text: string; model?: string; artifacts?: ChatArtifact[] }
 export interface ChatScope { loadedCount?: number; availableModels?: string[] }
+export function detectRequestedArtifactKind(text: string): ChatArtifactKind | null {
+  const normalized = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+  const asksForFile = /\b(tao|xuat|lam|soan|tai|generate|export)\b/.test(normalized);
+  if (!asksForFile) return null;
+  if (/\b(xlsx|excel|bang tinh)\b/.test(normalized)) return 'xlsx';
+  if (/\bcsv\b/.test(normalized)) return 'csv';
+  if (/\bjson\b/.test(normalized)) return 'json';
+  if (/\b(markdown|\.md)\b/.test(normalized)) return 'md';
+  if (/\b(txt|van ban)\b/.test(normalized)) return 'txt';
+  if (/\b(docx|word|google docs?|gg docs?|file|tep)\b/.test(normalized)) return 'docx';
+  return null;
+}
 export function buildAIChatPayload(messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}) {
   const latest = messages.at(-1)?.text.toLowerCase() ?? '';
   const references = messages.slice(-8).map(m => m.text).join('\n');
@@ -25,6 +37,10 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
   const bounded = buildAIReportPayload('risk', projectName, sample, { totalIssues: stats.total, closedCount: stats.closed, inProgressCount: stats.inProgress, overdueCount: stats.overdueIssues.length, blockedCount: stats.blockedIssues.length }, model);
   const history = messages.slice(-24).map(m => ({ role: m.role, text: m.text.slice(0, 8000) }));
   while (history.at(0)?.role === 'assistant') history.shift();
+  const requestedArtifact = detectRequestedArtifactKind(messages.at(-1)?.text || '');
+  if (requestedArtifact && history.at(-1)?.role === 'user') {
+    history[history.length - 1].text += `\n\n[Yêu cầu xử lý tệp của ứng dụng: Hãy soạn đầy đủ nội dung và xuất artifact kind=${requestedArtifact} theo đúng định dạng <pm_artifacts> trong system instruction. Ứng dụng sẽ tự tạo tệp và nút tải xuống; không được từ chối vì không có quyền truy cập ổ đĩa hoặc Google Drive.]`;
+  }
   const breakdown = (select: (issue: RedmineIssue) => { id: number; name: string } | undefined) => {
     const rows = new Map<number, { id: number; name: string; count: number }>();
     issues.forEach(i => { const v = select(i); if (!v) return; const row = rows.get(v.id) ?? { id: v.id, name: v.name.slice(0, 80), count: 0 }; row.count++; rows.set(v.id, row); });

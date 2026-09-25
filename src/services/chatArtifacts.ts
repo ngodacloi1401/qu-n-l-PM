@@ -1,4 +1,4 @@
-import type { ChatArtifact, ChatArtifactKind } from './aiPayload';
+import { detectRequestedArtifactKind, type ChatArtifact, type ChatArtifactKind } from './aiPayload';
 
 const EXTENSIONS: ChatArtifactKind[] = ['docx', 'xlsx', 'csv', 'md', 'txt', 'json'];
 const ARTIFACT_PATTERN = /<pm_artifacts>\s*([\s\S]*?)\s*<\/pm_artifacts>/gi;
@@ -36,6 +36,27 @@ export function extractChatArtifacts(source: string): { text: string; artifacts:
   return { text: text || (artifacts.length ? 'Đã tạo tệp theo yêu cầu.' : source.trim()), artifacts };
 }
 
+const refusalPattern = /(kh[oô]ng th[eể].*(t[aạ]o|xu[aấ]t).*(file|t[eệ]p|google docs?|docx)|kh[oô]ng c[oó] quy[eề]n truy c[aậ]p.*(google drive|[oổ] [dđ][iĩ]a)|ch[iỉ] tr[aả] l[oờ]i b[aằ]ng v[aă]n b[aả]n|cannot|can't).*/i;
+
+function removeFileRefusal(text: string) {
+  const paragraphs = text.split(/\n\s*\n/);
+  const useful = paragraphs.filter(paragraph => !refusalPattern.test(paragraph.trim())).join('\n\n').trim();
+  return useful || text.trim();
+}
+
+export function ensureRequestedChatArtifacts(userText: string, response: string): { text: string; artifacts: ChatArtifact[] } {
+  const parsed = extractChatArtifacts(response);
+  if (parsed.artifacts.length) return parsed;
+  const kind = detectRequestedArtifactKind(userText);
+  if (!kind) return parsed;
+  const content = removeFileRefusal(parsed.text);
+  const label = kind === 'docx' ? 'Tài liệu Word' : kind === 'xlsx' ? 'Bảng tính Excel' : `Tệp ${kind.toUpperCase()}`;
+  return {
+    text: refusalPattern.test(parsed.text) ? `Đã chuẩn bị ${label} để bạn tải xuống.\n\n${content}` : parsed.text,
+    artifacts: [{ id: crypto.randomUUID(), name: `tai-lieu-ai.${kind}`, kind, title: label, content }],
+  };
+}
+
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -71,7 +92,14 @@ async function createXlsxBlob(content: string) {
   const workbook = new ExcelJS.Workbook();
   let payload: any;
   try { payload = JSON.parse(content); } catch { payload = null; }
-  const sheets = Array.isArray(payload?.sheets) && payload.sheets.length ? payload.sheets.slice(0, 20) : [{ name: 'Nội dung', headers: ['Nội dung'], rows: content.split(/\r?\n/).filter(Boolean).map((line: string) => [line]) }];
+  const markdownLines = content.split(/\r?\n/).filter(line => /^\s*\|.*\|\s*$/.test(line));
+  const markdownTable = markdownLines.length >= 2
+    ? markdownLines.map(line => line.trim().replace(/^\||\|$/g, '').split('|').map(cell => cell.trim())).filter((_, index) => index !== 1)
+    : [];
+  const fallbackSheet = markdownTable.length
+    ? { name: 'Nội dung', headers: markdownTable[0], rows: markdownTable.slice(1) }
+    : { name: 'Nội dung', headers: ['Nội dung'], rows: content.split(/\r?\n/).filter(Boolean).map((line: string) => [line]) };
+  const sheets = Array.isArray(payload?.sheets) && payload.sheets.length ? payload.sheets.slice(0, 20) : [fallbackSheet];
   for (const [index, source] of sheets.entries()) {
     const name = String(source?.name || `Sheet ${index + 1}`).replace(/[\\/*?:\[\]]/g, '-').slice(0, 31);
     const sheet = workbook.addWorksheet(name || `Sheet ${index + 1}`);
