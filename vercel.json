@@ -1,7 +1,7 @@
 {
   "version": 2,
   "functions": {
-    "api/index.ts": { "maxDuration": 60 }
+    "api/index.ts": { "maxDuration": 180 }
   },
   "rewrites": [
     {

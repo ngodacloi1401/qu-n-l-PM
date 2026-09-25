@@ -317,7 +317,7 @@ app.post('/api/gemini/pm-insights', async (req: Request, res: Response) => {
     const ai = new GoogleGenAI({
       apiKey,
       httpOptions: {
-        timeout: mode === 'chat' ? 50000 : 28000,
+        timeout: mode === 'chat' ? 165000 : 28000,
         retryOptions: { attempts: 1 },
         headers: {
           'User-Agent': 'aistudio-build',

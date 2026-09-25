@@ -57,10 +57,10 @@ function responseError(provider: AIProvider, response: Response, detail: string)
 }
 
 async function fetchAI(url: string, init: RequestInit) {
-  try { return await fetch(url, { ...init, signal: AbortSignal.timeout(50_000) }); }
+  try { return await fetch(url, { ...init, signal: AbortSignal.timeout(165_000) }); }
   catch (error: any) {
     if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-      throw Object.assign(new Error('AI chưa trả lời xong trong giới hạn 50 giây. Hãy thử lại hoặc chọn model nhanh hơn.'), { status: 504 });
+      throw Object.assign(new Error('Nhà cung cấp AI chưa trả lời trong thời gian cho phép. Hãy thử lại hoặc chọn model nhanh hơn.'), { status: 504 });
     }
     throw error;
   }

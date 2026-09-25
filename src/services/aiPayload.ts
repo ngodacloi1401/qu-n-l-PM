@@ -54,7 +54,7 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
     return [...rows.values()];
   };
   const loadedCount = scope.loadedCount ?? issues.length;
-  const issueRowLimit = 400;
+  const issueRowLimit = 200;
   const selectedIssues = sample.slice(0, issueRowLimit);
   const compactRows = (subjectLength: number) => selectedIssues.map(i => [
     i.id, i.subject.slice(0, subjectLength), i.project?.id ?? null, i.tracker?.id ?? null, i.status?.id ?? null,
@@ -117,7 +117,7 @@ export async function readAIReportResponse(res: Response) {
       429: 'Gemini đã hết quota hoặc vượt giới hạn lượt gọi (HTTP 429). Kiểm tra quota trong Google AI Studio và thử lại sau.',
       502: 'Máy chủ AI chưa phản hồi được (HTTP 502). Hãy thử lại sau.',
       503: 'Dịch vụ AI tạm thời không khả dụng (HTTP 503). Hãy thử lại sau.',
-      504: 'AI chưa trả lời xong trong giới hạn 50 giây (HTTP 504). Bạn vẫn có thể mở và cuộn các cuộc trò chuyện khác, sau đó thử lại hoặc chọn model nhanh hơn.',
+      504: 'Nhà cung cấp AI chưa trả lời trong thời gian cho phép (HTTP 504). Bạn vẫn có thể mở và cuộn các cuộc trò chuyện khác, sau đó thử lại hoặc chọn model nhanh hơn.',
     };
     throw new Error(messages[res.status] || `API báo cáo AI gặp lỗi HTTP ${res.status}. Hãy thử lại sau.`);
   }

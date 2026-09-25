@@ -86,9 +86,9 @@ test('ten thousand project issues keep complete aggregates with a bounded detail
   const payload = buildAIChatPayload([{ role: 'user', text: 'Tổng hợp toàn dự án' }], 'Large Project', issues, [], 10_000, 'gemini-2.5-flash', { loadedCount: 10_000 });
   assert.equal(payload.context.isComplete, true);
   assert.equal(payload.context.allIssueCount, 10_000);
-  assert.equal(payload.context.issueRows.length, 400);
-  assert.equal(payload.context.includedIssueCount, 400);
-  assert.equal(payload.context.omittedIssueCount, 9600);
+  assert.equal(payload.context.issueRows.length, 200);
+  assert.equal(payload.context.includedIssueCount, 200);
+  assert.equal(payload.context.omittedIssueCount, 9800);
   assert.equal(payload.context.statuses.reduce((sum, row) => sum + row.count, 0), 10_000);
   assert.ok(Buffer.byteLength(JSON.stringify(payload)) <= 1_000_000);
 });
@@ -100,7 +100,7 @@ test('chat validation rejects invalid roles and keeps complete counts within a b
   const issue = { id: 123, subject: 'ữ'.repeat(1000), status: { id: 1, name: 'QA Verified' }, tracker: { id: 4, name: 'Task' }, project: { id: 84, name: 'Test' }, priority: { id: 1, name: 'Normal' } } as RedmineIssue;
   const payload = buildAIChatPayload(messages, 'Test', Array(5000).fill(issue), [], 6650, 'gemini-2.5-flash');
   assert.ok(Buffer.byteLength(JSON.stringify(payload)) <= 1_000_000);
-  assert.equal(payload.context.issueRows.length, 400);
+  assert.equal(payload.context.issueRows.length, 200);
   assert.equal(payload.context.allIssueCount, 5000);
   assert.equal(payload.context.isComplete, false);
   assert.equal(payload.statistics.totalIssues, 5000);
