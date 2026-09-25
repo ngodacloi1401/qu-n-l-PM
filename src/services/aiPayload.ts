@@ -2,7 +2,15 @@ import type { RedmineIssue } from '../types/redmine';
 import type { RedmineStatus } from '../types/redmine';
 import { calculatePMAnalytics, vietnamToday } from './pmAnalytics';
 
-export interface ChatMessage { role: 'user' | 'assistant'; text: string; model?: string }
+export type ChatArtifactKind = 'docx' | 'xlsx' | 'csv' | 'md' | 'txt' | 'json';
+export interface ChatArtifact {
+  id: string;
+  name: string;
+  kind: ChatArtifactKind;
+  title?: string;
+  content: string;
+}
+export interface ChatMessage { role: 'user' | 'assistant'; text: string; model?: string; artifacts?: ChatArtifact[] }
 export interface ChatScope { loadedCount?: number; availableModels?: string[] }
 export function buildAIChatPayload(messages: ChatMessage[], projectName: string, issues: RedmineIssue[], statuses: RedmineStatus[], totalAvailable: number, model: string, scope: ChatScope = {}) {
   const latest = messages.at(-1)?.text.toLowerCase() ?? '';

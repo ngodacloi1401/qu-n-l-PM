@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Plus, Sparkles, RefreshCw, Bot, MessageSquare, Trash2, Square, Database, Copy, Check } from 'lucide-react';
+import { Send, Plus, Sparkles, RefreshCw, Bot, MessageSquare, Trash2, Square, Database, Copy, Check, Download, FileText, FileSpreadsheet } from 'lucide-react';
 import type { RedmineIssue, RedmineProject, RedmineStatus } from '../types/redmine';
 import { FALLBACK_AI_MODELS, askAIChat, getAvailableAIModels, getStoredConfig, type AIProvider } from '../services/redmineApi';
 import type { ChatMessage, ChatScope } from '../services/aiPayload';
 import { cacheScope, readLocalCache, writeLocalCache } from '../services/localCache';
+import { downloadAnswerAsDocx, downloadChatArtifact, extractChatArtifacts } from '../services/chatArtifacts';
 
 interface Session { id: string; title: string; messages: ChatMessage[] }
 interface SessionStore { sessions: Session[]; activeId: string }
@@ -58,6 +59,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copiedMessage, setCopiedMessage] = useState<number | null>(null);
+  const [downloading, setDownloading] = useState('');
   const lock = useRef(false);
   const alive = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
@@ -143,7 +145,8 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
         setModel(response.usedModel); setCustomMode(!option); if (!option) setCustom(response.usedModel);
         setModelNotice(`Model ${activeModel} không dùng được. Hệ thống đã chuyển sang ${option?.name || response.usedModel}.`);
       }
-      const answer: ChatMessage = { role: 'assistant', text: response.result, model: response.usedModel || activeModel };
+      const parsed = extractChatArtifacts(response.result);
+      const answer: ChatMessage = { role: 'assistant', text: parsed.text, model: response.usedModel || activeModel, artifacts: parsed.artifacts };
       const latest = await readLocalCache<SessionStore>(storageKey) || pending;
       const existing = latest.sessions.find(s => s.id === sessionId);
       if (JSON.stringify(existing?.messages) === JSON.stringify(messages)) {
@@ -186,15 +189,24 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
     }
   };
 
-  return <div className="h-[calc(100vh-8.5rem)] min-h-[660px] bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex">
-    <aside className="hidden lg:flex w-64 shrink-0 bg-slate-950 text-white flex-col border-r border-slate-800">
+  const downloadArtifact = async (key: string, action: () => Promise<void>) => {
+    if (downloading) return;
+    setDownloading(key);
+    setError('');
+    try { await action(); }
+    catch (error: any) { setError(error?.message || 'Không thể tạo tệp để tải xuống.'); }
+    finally { setDownloading(''); }
+  };
+
+  return <div className="h-full min-h-0 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex">
+    <aside className="hidden lg:flex min-h-0 w-64 shrink-0 bg-slate-950 text-white flex-col border-r border-slate-800 overflow-hidden">
       <div className="p-3 border-b border-slate-800">
         <button onClick={createNewSession} disabled={busy || !storageKey} className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-white text-slate-900 px-3 py-2.5 text-sm font-semibold hover:bg-slate-100 disabled:opacity-40">
           <Plus className="w-4 h-4" />Cuộc trò chuyện mới
         </button>
       </div>
       <div className="px-3 pt-4 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Lịch sử trò chuyện</div>
-      <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-1">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3 space-y-1">
         {store.sessions.map(session => <div key={session.id} className={`group flex items-center rounded-lg ${session.id === store.activeId ? 'bg-slate-800' : 'hover:bg-slate-900'}`}>
           <button disabled={busy} onClick={() => { setStore(current => ({ ...current, activeId: session.id })); setError(''); setDraft(''); }} className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2.5 text-left text-sm disabled:opacity-50">
             <MessageSquare className="w-4 h-4 shrink-0 text-slate-400" /><span className="truncate">{session.title}</span>
@@ -207,7 +219,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
       </div>
     </aside>
 
-    <section className="flex-1 min-w-0 flex flex-col bg-white">
+    <section className="flex-1 min-w-0 min-h-0 flex flex-col bg-white overflow-hidden">
       <header className="min-h-16 px-4 sm:px-5 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-white">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center shadow-sm"><Sparkles className="w-4.5 h-4.5" /></div>
@@ -238,7 +250,7 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
         {isDataLoading && <span role="status" className="text-xs text-indigo-700 flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5 animate-spin" />Đang chuẩn bị đầy đủ dữ liệu dự án…</span>}
       </div>}
 
-      <div role="log" aria-label="Lịch sử chat AI" aria-live="polite" className="flex-1 overflow-y-auto bg-white">
+      <div role="log" aria-label="Lịch sử chat AI" aria-live="polite" className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white">
         {!storageKey && <div className="h-full flex items-center justify-center text-sm text-slate-500"><RefreshCw className="w-4 h-4 animate-spin mr-2" />Đang mở phiên trò chuyện…</div>}
         {storageKey && !active?.messages.length && <div className="h-full max-w-3xl mx-auto px-5 py-10 flex flex-col justify-center">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-200 mb-5"><Bot className="w-6 h-6" /></div>
@@ -256,7 +268,21 @@ export function AICopilotView({ issues, statuses, selectedProject, projectId, to
             ? <div key={index} className="flex justify-end pl-10"><div className="max-w-[85%] rounded-2xl rounded-br-md bg-slate-900 text-white px-4 py-3 text-sm"><MessageBody text={message.text} /></div></div>
             : <div key={index} className="flex items-start gap-3">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center shrink-0"><Bot className="w-4 h-4" /></div>
-                <div className="min-w-0 flex-1 text-sm text-slate-800"><div className="text-xs font-semibold text-slate-500 mb-2">AI PM <span className="font-normal">· {message.model || activeModel}</span></div><MessageBody text={message.text} /><button type="button" onClick={() => void copyMessage(message.text, index)} className="mt-3 inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700">{copiedMessage === index ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}{copiedMessage === index ? 'Đã sao chép' : 'Sao chép'}</button></div>
+                <div className="min-w-0 flex-1 text-sm text-slate-800">
+                  <div className="text-xs font-semibold text-slate-500 mb-2">AI PM <span className="font-normal">· {message.model || activeModel}</span></div>
+                  <MessageBody text={message.text} />
+                  {!!message.artifacts?.length && <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                    {message.artifacts.map(artifact => <button key={artifact.id} type="button" disabled={!!downloading} onClick={() => void downloadArtifact(artifact.id, () => downloadChatArtifact(artifact))} className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-left hover:border-indigo-300 hover:bg-indigo-50 disabled:opacity-50">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-indigo-600 border border-slate-200">{artifact.kind === 'xlsx' ? <FileSpreadsheet className="w-4.5 h-4.5" /> : <FileText className="w-4.5 h-4.5" />}</span>
+                      <span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-slate-800">{artifact.title || artifact.name}</span><span className="block truncate text-[11px] text-slate-500">{artifact.name}</span></span>
+                      {downloading === artifact.id ? <RefreshCw className="w-4 h-4 shrink-0 animate-spin text-indigo-600" /> : <Download className="w-4 h-4 shrink-0 text-slate-400 group-hover:text-indigo-600" />}
+                    </button>)}
+                  </div>}
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+                    <button type="button" onClick={() => void copyMessage(message.text, index)} className="inline-flex items-center gap-1 hover:text-slate-700">{copiedMessage === index ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}{copiedMessage === index ? 'Đã sao chép' : 'Sao chép'}</button>
+                    <button type="button" disabled={!!downloading} onClick={() => void downloadArtifact(`answer-${index}`, () => downloadAnswerAsDocx(message.text, `tra-loi-ai-${index + 1}.docx`))} className="inline-flex items-center gap-1 hover:text-indigo-700 disabled:opacity-50">{downloading === `answer-${index}` ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}Tải câu trả lời .docx</button>
+                  </div>
+                </div>
               </div>)}
           {busy && <div role="status" className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center shrink-0"><Bot className="w-4 h-4" /></div>

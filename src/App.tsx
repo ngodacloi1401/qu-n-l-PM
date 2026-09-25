@@ -495,7 +495,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-indigo-500 selection:text-white">
+    <div className={`${activeView === 'ai' ? 'h-screen overflow-hidden' : 'min-h-screen'} bg-slate-50 flex flex-col selection:bg-indigo-500 selection:text-white`}>
       {/* Top App Header */}
       <Header
         currentUser={currentUser}
@@ -513,7 +513,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
+      <main className={`flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 ${activeView === 'ai' ? 'min-h-0 flex flex-col overflow-hidden' : ''}`}>
         {isLoading && (activeView === 'kanban' || activeView === 'list' || activeView === 'analytics') && <div role="status" className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-sm text-indigo-800"><RefreshCw className="inline w-4 h-4 mr-2 animate-spin" />{fetchProgress ? `Đang tải trang dữ liệu đầu tiên: ${fetchProgress.loaded}/${fetchProgress.total} công việc` : 'Đang chuẩn bị và kiểm tra dữ liệu Redmine…'}</div>}
         {isFilterLoading && (activeView === 'kanban' || activeView === 'list' || activeView === 'analytics') && <div role="status" className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin flex-shrink-0" /><span>Đang tải dữ liệu cần hiển thị cho {activeView === 'kanban' ? 'Kanban' : activeView === 'list' ? 'Danh sách việc' : 'Báo cáo PM'}{hasActiveFilters ? ' theo bộ lọc đã chọn' : ''}{filterProgress ? `: ${filterProgress.loaded}/${filterProgress.total}` : '…'}; phần còn lại tiếp tục đồng bộ nền.</span></div>}
         {/* Error notification */}
@@ -622,7 +622,7 @@ export default function App() {
           <OTReportView key={`${selectedProjectId}:${config.baseUrl}:${config.apiKey}`} projectId={selectedProjectId} projectName={selectedProject?.name || 'Tất cả dự án'} baseUrl={config.baseUrl} onSelectIssue={setSelectedIssueForModal} />
         )}
 
-        <div hidden={activeView !== 'ai'}>
+        <div hidden={activeView !== 'ai'} className={activeView === 'ai' ? 'min-h-0 flex-1' : ''}>
           <AICopilotView
             key={`${selectedProjectId}:${config.baseUrl}:${config.apiKey}`}
             projectId={selectedProjectId}
