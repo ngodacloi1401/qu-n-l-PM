@@ -79,14 +79,22 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
 
   return (
     <div className="space-y-5">
-      <section className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div><h2 className="text-lg font-bold text-slate-900">Tổng quan dự án</h2><p className="text-sm text-slate-500 mt-1">Số liệu dùng trạng thái thật từ Redmine và bộ lọc đang chọn.</p></div>
+      <section className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-200">
+            <BarChart2 className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-slate-900">Báo cáo & Phân tích PM</h2>
+            <p className="text-xs text-slate-500">Số liệu dùng trạng thái thật từ Redmine và bộ lọc đang chọn.</p>
+          </div>
+        </div>
         <div className={`rounded-lg px-3 py-2 text-xs font-semibold ${loadedCount < totalAvailable ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>{loadedCount < totalAvailable ? `Đang tải ${loadedCount}/${totalAvailable} công việc` : `Đã tải đủ ${loadedCount} công việc`}</div>
       </section>
       {/* 5 PM High-Level KPI Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3.5">
         {/* Total */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider">Tổng công việc</span>
             <Target className="w-4 h-4 text-indigo-500" />
@@ -96,7 +104,7 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
         </div>
 
         {/* In Progress */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider">Đang làm</span>
             <Clock className="w-4 h-4 text-amber-500" />
@@ -106,7 +114,7 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
         </div>
 
         {/* Completion Rate */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider">Tỷ lệ đã đóng</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
@@ -116,7 +124,7 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
         </div>
 
         {/* Overdue */}
-        <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-2xs bg-rose-50/20">
+        <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-xs bg-rose-50/20">
           <div className="flex items-center justify-between text-rose-700 mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider">Quá hạn chót</span>
             <AlertTriangle className="w-4 h-4 text-rose-500" />
@@ -126,7 +134,7 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
         </div>
 
         {/* Blocked / Failed */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider">Bị chặn / Lỗi QA</span>
             <ShieldAlert className="w-4 h-4 text-orange-500" />

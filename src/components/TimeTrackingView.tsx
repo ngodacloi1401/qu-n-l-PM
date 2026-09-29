@@ -113,25 +113,26 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
         </div>
 
         <div className="flex flex-wrap gap-2 items-end">
-          <label className="text-xs">Từ ngày<input aria-label="Log time từ ngày" type="date" value={from} onChange={e => setFrom(e.target.value)} className="block border rounded p-2 mt-1" /></label>
-          <label className="text-xs">Đến ngày<input aria-label="Log time đến ngày" type="date" value={to} onChange={e => setTo(e.target.value)} className="block border rounded p-2 mt-1" /></label>
-          <label className="text-xs">Thành viên<select aria-label="Lọc log time theo thành viên" value={selectedUserId} onChange={e => { setSelectedUserId(e.target.value); setEntryPage(1); }} className="block border rounded p-2 mt-1 min-w-44 bg-white"><option value="all">Tất cả thành viên</option>{users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
-          <button disabled={loadingEntries} onClick={() => setReload(n => n + 1)} className="border rounded-lg px-3 py-2 text-xs"><RefreshCw className={"inline w-4 h-4 mr-1 " + (loadingEntries ? 'animate-spin' : '')} />Tải lại</button>
-          <button disabled={loadingEntries || !filteredEntries.length} onClick={() => downloadTimeEntriesExcel(filteredEntries, { project: selectedProject?.name || 'Tất cả dự án', from, to })} className="bg-emerald-600 text-white rounded-lg px-3 py-2 text-xs disabled:opacity-40"><Download className="inline w-4 h-4 mr-1" />Xuất Excel</button>
-        <button
-          onClick={() => setShowLogModal(true)}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Ghi nhận giờ làm (+ Log Time)</span>
-        </button></div>
+          <label className="text-xs text-slate-600">Từ ngày<input aria-label="Log time từ ngày" type="date" value={from} onChange={e => setFrom(e.target.value)} className="block bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm mt-1" /></label>
+          <label className="text-xs text-slate-600">Đến ngày<input aria-label="Log time đến ngày" type="date" value={to} onChange={e => setTo(e.target.value)} className="block bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm mt-1" /></label>
+          <label className="text-xs text-slate-600">Thành viên<select aria-label="Lọc log time theo thành viên" value={selectedUserId} onChange={e => { setSelectedUserId(e.target.value); setEntryPage(1); }} className="block bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm mt-1 min-w-44"><option value="all">Tất cả thành viên</option>{users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
+          <button disabled={loadingEntries} onClick={() => setReload(n => n + 1)} className="inline-flex items-center gap-1.5 px-3 py-2 text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-300 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40"><RefreshCw className={`w-4 h-4 ${loadingEntries ? 'animate-spin' : ''}`} />Tải lại</button>
+          <button disabled={loadingEntries || !filteredEntries.length} onClick={() => downloadTimeEntriesExcel(filteredEntries, { project: selectedProject?.name || 'Tất cả dự án', from, to })} className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-40"><Download className="w-4 h-4" />Xuất Excel</button>
+          <button
+            onClick={() => setShowLogModal(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Ghi nhận giờ làm (+ Log Time)</span>
+          </button>
+        </div>
       </div>
       {loadingEntries && <div role="status" className="p-3 bg-indigo-50 text-indigo-700 rounded-lg text-sm"><RefreshCw className="inline w-4 h-4 mr-2 animate-spin" />Đang tải đầy đủ nhật ký giờ làm…</div>}
       {!loadingEntries && errorMsg && !showLogModal && <div role="alert" className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-sm"><AlertCircle className="inline w-4 h-4 mr-2" />{errorMsg}</div>}
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
             Tổng giờ đã log
           </div>
@@ -139,7 +140,7 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
           <div className="text-xs text-slate-500 mt-1">{filteredEntries.length} lượt ghi nhận{selectedUserId !== 'all' ? ` / ${entries.length} tổng lượt` : ''} trong khoảng ngày</div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
             Số thành viên đã log
           </div>
@@ -147,7 +148,7 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
           <div className="text-xs text-slate-500 mt-1">Đang đóng góp công sức vào dự án</div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
             Trung bình mỗi lượt log
           </div>

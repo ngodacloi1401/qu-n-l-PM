@@ -197,17 +197,14 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-              <span>Việc cá nhân (Excel)</span>
-              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
-                Mới
-              </span>
+              <span>Việc cá nhân</span>
             </button>
             <button
               id="tab-kanban"
               onClick={() => onSelectView('kanban')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                 activeView === 'kanban'
-                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -220,7 +217,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => onSelectView('list')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                 activeView === 'list'
-                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -233,7 +230,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => onSelectView('analytics')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                 activeView === 'analytics'
-                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -246,7 +243,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => onSelectView('time')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                 activeView === 'time'
-                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
@@ -257,9 +254,10 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="tab-ot"
               onClick={() => onSelectView('ot')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors ${activeView === 'ot' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-slate-600 hover:bg-slate-100'}`}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${activeView === 'ot' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}
             >
-              <Clock className="w-4 h-4" /><span>Tổng hợp OT</span>
+              <Clock className="w-4 h-4" />
+              <span>Tổng hợp OT</span>
             </button>
             <button
               id="tab-ai"
@@ -272,8 +270,8 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Sparkles className="w-4 h-4 text-purple-600" />
               <span>AI PM Copilot</span>
-              <span className="bg-purple-200 text-purple-800 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
-                Gemini · Claude · GPT · Codex
+              <span className="bg-purple-200 text-purple-800 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                AI
               </span>
             </button>
           </nav>
