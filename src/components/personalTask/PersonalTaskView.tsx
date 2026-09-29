@@ -15,6 +15,7 @@ import {
   FolderKanban,
   Globe,
   RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import type {
@@ -47,6 +48,7 @@ import { exportPersonalTasksToExcel } from '../../services/personalTaskExcel';
 import { PersonalTaskKanban } from './PersonalTaskKanban';
 import { ExcelImportModal } from './ExcelImportModal';
 import { PersonalTaskModal } from './PersonalTaskModal';
+import { PersonalTaskAIModal } from './PersonalTaskAIModal';
 
 type SubTab = 'excel' | 'redmine';
 
@@ -125,6 +127,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   // Modals
   const [showImportModal, setShowImportModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showAIModal, setShowAIModal] = useState(false);
   const [editingTask, setEditingTask] = useState<PersonalTask | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const [liveRedmineIssues, setLiveRedmineIssues] = useState<RedmineIssue[]>([]);
@@ -562,6 +565,15 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           {activeTab === 'excel' && (
             <>
               <button
+                onClick={() => setShowAIModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+                title="Lập kế hoạch công việc tự động bằng Gemini AI"
+              >
+                <Sparkles className="w-4 h-4 text-purple-200" />
+                <span>AI Lập kế hoạch</span>
+              </button>
+
+              <button
                 onClick={() => setShowImportModal(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
               >
@@ -799,6 +811,16 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           existingCategories={availableCategories}
           projects={projects}
           currentUser={currentUser}
+        />
+      )}
+
+      {showAIModal && (
+        <PersonalTaskAIModal
+          onClose={() => setShowAIModal(false)}
+          onAddTasks={(newTasks) => {
+            handleImportTasks(newTasks, 'append');
+          }}
+          projectName={projects.find((p) => String(p.id) === selectedProjectId)?.name || 'Dự án chung'}
         />
       )}
 
