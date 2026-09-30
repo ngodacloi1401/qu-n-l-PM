@@ -37,6 +37,56 @@ const savedModel = (prov: AIProvider): string => {
   return list.find(m => m.isDefault)?.id || list[0]?.id || 'gemini-2.0-flash';
 };
 
+function extractJsonArray<T = any>(rawText: string): T[] {
+  if (!rawText || !rawText.trim()) {
+    throw new Error('AI trả về nội dung rỗng.');
+  }
+  const text = rawText.trim();
+  const tryParse = (str: string): any => {
+    try {
+      return JSON.parse(str);
+    } catch {
+      const sanitized = str.replace(/,\s*([\]}])/g, '$1');
+      return JSON.parse(sanitized);
+    }
+  };
+
+  // 1. Try markdown code block fence
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch) {
+    const blockContent = codeBlockMatch[1].trim();
+    const firstB = blockContent.indexOf('[');
+    const lastB = blockContent.lastIndexOf(']');
+    if (firstB !== -1 && lastB !== -1 && lastB > firstB) {
+      try {
+        const res = tryParse(blockContent.slice(firstB, lastB + 1));
+        if (Array.isArray(res)) return res;
+      } catch {}
+    }
+  }
+
+  // 2. Find outermost [ and ]
+  const startIdx = text.indexOf('[');
+  const endIdx = text.lastIndexOf(']');
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    try {
+      const res = tryParse(text.slice(startIdx, endIdx + 1));
+      if (Array.isArray(res)) return res;
+    } catch {}
+  }
+
+  // 3. Fallback: stripped text
+  const stripped = text
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```$/i, '')
+    .trim();
+  const direct = tryParse(stripped);
+  if (Array.isArray(direct)) return direct;
+
+  throw new Error('Dữ liệu AI trả về không đúng cấu trúc mảng JSON.');
+}
+
 export const PersonalTaskAIModal: React.FC<PersonalTaskAIModalProps> = ({
   onClose,
   onAddTasks,
@@ -94,22 +144,26 @@ export const PersonalTaskAIModal: React.FC<PersonalTaskAIModalProps> = ({
     setError(null);
     setDrafts([]);
 
-    const systemPrompt = `Bạn là một trợ lý quản lý công việc và Project Manager thông minh.
-Người dùng muốn lên kế hoạch hoặc tạo công việc với yêu cầu: "${prompt}".
+    const systemPrompt = `Bạn là một chuyên gia quản lý công việc và Project Manager thông minh.
+Người dùng muốn phân rã mục tiêu hoặc yêu cầu công việc: "${prompt}".
 Dự án: "${projectName}". Tuần kế hoạch: "${week}".
 
-Hãy phân tích và chia nhỏ yêu cầu này thành các đầu việc (tasks) cụ thể, khả thi và rõ ràng.
-Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ (không kèm markdown \`\`\`json, không kèm giải thích ngoài JSON) theo đúng định dạng mảng:
+Yêu cầu:
+1. Hãy phân tích và chia nhỏ yêu cầu này thành các đầu việc (tasks) cụ thể, có tính hành động cao, rõ ràng.
+2. Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ (valid JSON array of objects), KHÔNG kèm bất kỳ lời chào, giải thích hoặc ghi chú bên ngoài JSON.
+
+Định dạng mẫu:
 [
   {
     "title": "Tiêu đề công việc ngắn gọn, rõ ràng",
-    "category": "Nhóm việc (VD: Kỹ thuật, Báo cáo, Kiểm tra, Thiết kế...)",
-    "dueDate": "YYYY-MM-DD (Hạn chót ước tính)",
-    "priorityName": "Normal" hoặc "High" hoặc "Urgent" hoặc "Low",
+    "category": "Nhóm việc (VD: Kỹ thuật, Báo cáo, Kiểm tra, Nghiệm thu, Thiết kế...)",
+    "dueDate": "YYYY-MM-DD",
+    "priorityName": "Normal",
     "statusName": "New",
     "description": "Các bước thực hiện hoặc checklist chi tiết"
   }
-]`;
+]
+Lưu ý: "priorityName" chỉ chọn 1 trong các giá trị: "Normal", "High", "Urgent", "Low".`;
 
     try {
       const resp = await askAIChat(
@@ -127,11 +181,21 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ (không kèm markdown 
       );
 
       const raw = resp.result.trim();
-      const cleanJson = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
-      const parsed: GeneratedTaskDraft[] = JSON.parse(cleanJson);
+      const rawList = extractJsonArray(raw);
 
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        throw new Error('AI không tạo được danh sách công việc. Vui lòng thử mô tả chi tiết hơn.');
+      const parsed: GeneratedTaskDraft[] = rawList
+        .filter((item: any) => item && typeof item === 'object' && (item.title || item.name))
+        .map((item: any) => ({
+          title: String(item.title || item.name || '').trim(),
+          category: typeof item.category === 'string' ? item.category.trim() : undefined,
+          dueDate: typeof item.dueDate === 'string' ? item.dueDate.trim() : (typeof item.due_date === 'string' ? item.due_date.trim() : undefined),
+          priorityName: typeof item.priorityName === 'string' ? item.priorityName.trim() : (typeof item.priority === 'string' ? item.priority.trim() : 'Normal'),
+          statusName: typeof item.statusName === 'string' ? item.statusName.trim() : (typeof item.status === 'string' ? item.status.trim() : 'New'),
+          description: typeof item.description === 'string' ? item.description.trim() : undefined,
+        }));
+
+      if (!parsed.length) {
+        throw new Error('AI không tạo được danh sách công việc hợp lệ. Vui lòng thử mô tả chi tiết hơn.');
       }
 
       setDrafts(parsed);
