@@ -56,7 +56,17 @@ export function buildAIChatPayload(messages: ChatMessage[], projectName: string,
   };
   const sample = [...issues].sort((a, b) => Number(ids.has(b.id)) - Number(ids.has(a.id)) || Number(memberMatch(b)) - Number(memberMatch(a)) || textScore(b) - textScore(a) || Number(important.has(b.id)) - Number(important.has(a.id)) || b.id - a.id);
   const bounded = buildAIReportPayload('risk', projectName, sample, { totalIssues: stats.total, closedCount: stats.closed, inProgressCount: stats.inProgress, overdueCount: stats.overdueIssues.length, blockedCount: stats.blockedIssues.length }, model, 60);
-  const history = messages.slice(-20).map(m => ({ role: m.role, text: m.text.slice(0, 6000) }));
+  // Token optimization: keep last 10 messages, strip old generated artifacts, bound older turns
+  const recentMessages = messages.slice(-10);
+  const history = recentMessages.map((m, idx) => {
+    const isLatest = idx === recentMessages.length - 1;
+    let text = m.text;
+    if (m.role === 'assistant' && !isLatest) {
+      text = text.replace(/<pm_artifacts>[\s\S]*?<\/pm_artifacts>/g, '[Tệp artifact đã xuất]');
+    }
+    const maxChars = isLatest ? 6000 : (m.role === 'assistant' ? 1200 : 1000);
+    return { role: m.role, text: text.slice(0, maxChars) };
+  });
   while (history.at(0)?.role === 'assistant') history.shift();
   const requestedArtifact = detectRequestedArtifactKind(messages.at(-1)?.text || '');
   if (requestedArtifact && history.at(-1)?.role === 'user') {

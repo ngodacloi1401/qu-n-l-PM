@@ -403,14 +403,15 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
     // Fallback chain in case of model spike / 503 high demand / availability issues
     const candidateModels: string[] = [primaryModel];
     const availableModels = Array.isArray(req.body?.context?.availableModels) ? req.body.context.availableModels.filter((id: any) => typeof id === 'string') : [];
+    const defaultFallbacks = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash-lite'];
     const fallbackModels = availableModels.length
-      ? ['gemini-2.5-flash', 'gemini-2.5-flash-lite', ...availableModels].filter(id => availableModels.includes(id))
-      : ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+      ? [...defaultFallbacks, ...availableModels].filter(id => availableModels.includes(id))
+      : defaultFallbacks;
     for (const m of fallbackModels) {
       if (!candidateModels.includes(m)) {
         candidateModels.push(m);
       }
-      if (candidateModels.length >= 4) break;
+      if (candidateModels.length >= 5) break;
     }
 
     let lastError: any = null;
@@ -422,22 +423,50 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
     for (const candidate of candidateModels) {
       try {
         console.log(`[AI Route] Attempting model: ${candidate}`);
+        const thinkingCfg = geminiThinkingConfig(candidate, reasoningEffort);
+        const modelConfig = {
+          systemInstruction: chat ? chat.systemInstruction : undefined,
+          maxOutputTokens,
+          ...(thinkingCfg.thinkingConfig ? thinkingCfg : {}),
+        };
+
         if (wantsStream) {
-          const stream: any = await ai.models.generateContentStream({ model: candidate, contents: chat!.contents, config: { systemInstruction: chat!.systemInstruction, maxOutputTokens, ...geminiThinkingConfig(candidate, reasoningEffort) } });
-          streamStarted = true;
-          res.status(200).set({ 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
-          res.flushHeaders?.();
+          const stream: any = await ai.models.generateContentStream({
+            model: candidate,
+            contents: chat!.contents,
+            config: modelConfig,
+          });
+          let hasChunk = false;
           for await (const chunk of stream) {
-            if (typeof chunk?.text === 'string' && chunk.text) { responseText += chunk.text; res.write(`${JSON.stringify({ type: 'delta', delta: chunk.text })}\n`); }
+            if (typeof chunk?.text === 'string' && chunk.text) {
+              if (!streamStarted) {
+                streamStarted = true;
+                res.status(200).set({
+                  'Content-Type': 'application/x-ndjson; charset=utf-8',
+                  'Cache-Control': 'no-cache, no-transform',
+                  'X-Accel-Buffering': 'no',
+                });
+                res.flushHeaders?.();
+              }
+              hasChunk = true;
+              responseText += chunk.text;
+              res.write(`${JSON.stringify({ type: 'delta', delta: chunk.text })}\n`);
+            }
           }
-          if (!responseText.trim()) throw Object.assign(new Error('Gemini không trả về nội dung văn bản.'), { status: 502 });
-          res.write(`${JSON.stringify({ type: 'done', usedModel: candidate, requestedModel: primaryModel, fallbackOccurred: candidate !== primaryModel })}\n`);
-          return res.end();
+          if (hasChunk && responseText.trim()) {
+            res.write(`${JSON.stringify({ type: 'done', usedModel: candidate, requestedModel: primaryModel, fallbackOccurred: candidate !== primaryModel })}\n`);
+            return res.end();
+          }
+          if (streamStarted) {
+            throw Object.assign(new Error('Gemini không trả về nội dung văn bản.'), { status: 502 });
+          }
+          throw Object.assign(new Error(`Model ${candidate} không phản hồi nội dung.`), { status: 404 });
         }
+
         const generatePromise = ai.models.generateContent({
           model: candidate,
           contents: chat ? chat.contents : prompt,
-          config: chat ? { systemInstruction: chat.systemInstruction, maxOutputTokens, ...geminiThinkingConfig(candidate, reasoningEffort) } : undefined,
+          config: chat ? modelConfig : undefined,
         });
         const response: any = await generatePromise;
         if (response && response.text) {
@@ -448,9 +477,21 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
         }
       } catch (err: any) {
         lastError = err;
-        if (streamStarted) { res.write(`${JSON.stringify({ type: 'error', error: geminiErrorResponse(err).error })}\n`); return res.end(); }
-        if (![400, 404].includes(Number(err?.status || err?.code))) break;
-        console.warn(`[AI Route] Model ${candidate} failed:`, geminiErrorResponse(err).status);
+        const status = Number(err?.status || err?.code);
+        const msg = String(err?.message || '');
+        console.warn(`[AI Route] Model ${candidate} failed: status=${status || 'N/A'} message=${msg.slice(0, 200)}`);
+        if (streamStarted) {
+          res.write(`${JSON.stringify({ type: 'error', error: geminiErrorResponse(err).error })}\n`);
+          return res.end();
+        }
+        // Stop retrying on non-recoverable errors
+        if (status === 504 || /timeout|DEADLINE_EXCEEDED/i.test(msg)) break;
+        if (status === 401 || status === 403 || /API_KEY_INVALID|API key not valid/i.test(msg)) break;
+        if (status === 429) break; // quota exhausted, no point trying other models with same key
+        // Retry on: 400 (bad model config), 404 (model not found), 500/502/503 (transient server errors)
+        if ([400, 404, 500, 502, 503].includes(status)) continue;
+        // Unknown errors → break to avoid infinite retry
+        break;
       }
     }
 

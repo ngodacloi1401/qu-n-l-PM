@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { X, Sparkles, Plus, Check, Loader2, Calendar, AlertCircle, Trash2, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Sparkles, Plus, Check, Loader2, Calendar, AlertCircle, Trash2, ArrowRight, Bot, Cpu } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
-import { askAIChat } from '../../services/redmineApi';
+import { askAIChat, FALLBACK_AI_MODELS, getAvailableAIModels, type AIModelOption, type AIProvider } from '../../services/redmineApi';
 
 interface GeneratedTaskDraft {
   title: string;
@@ -18,11 +18,33 @@ interface PersonalTaskAIModalProps {
   projectName?: string;
 }
 
+const PROVIDERS: Array<{ id: AIProvider; name: string }> = [
+  { id: 'gemini', name: 'Google Gemini' },
+  { id: 'openai', name: 'OpenAI / ChatGPT' },
+  { id: 'codex', name: 'OpenAI Codex' },
+  { id: 'anthropic', name: 'Anthropic / Claude' },
+];
+
+const savedProvider = (): AIProvider => {
+  const value = localStorage.getItem('redmine_ai_provider');
+  return value === 'openai' || value === 'codex' || value === 'anthropic' ? value : 'gemini';
+};
+
+const savedModel = (prov: AIProvider): string => {
+  const custom = localStorage.getItem(`redmine_ai_model_${prov}`) || (prov === 'gemini' ? localStorage.getItem('redmine_ai_model') : '');
+  if (custom) return custom;
+  const list = FALLBACK_AI_MODELS[prov] || [];
+  return list.find(m => m.isDefault)?.id || list[0]?.id || 'gemini-2.0-flash';
+};
+
 export const PersonalTaskAIModal: React.FC<PersonalTaskAIModalProps> = ({
   onClose,
   onAddTasks,
   projectName = 'Dự án chung',
 }) => {
+  const [provider, setProvider] = useState<AIProvider>(savedProvider);
+  const [modelOptions, setModelOptions] = useState<AIModelOption[]>(() => FALLBACK_AI_MODELS[savedProvider()] || []);
+  const [selectedModel, setSelectedModel] = useState<string>(() => savedModel(savedProvider()));
   const [prompt, setPrompt] = useState('');
   const [week, setWeek] = useState(() => {
     const d = new Date();
@@ -31,6 +53,38 @@ export const PersonalTaskAIModal: React.FC<PersonalTaskAIModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<GeneratedTaskDraft[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    getAvailableAIModels(provider)
+      .then(models => {
+        if (!active || !models.length) return;
+        setModelOptions(models);
+        if (!models.some(m => m.id === selectedModel)) {
+          const pref = savedModel(provider);
+          const next = models.find(m => m.id === pref) || models.find(m => m.isDefault) || models[0];
+          if (next) setSelectedModel(next.id);
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        const fallbacks = FALLBACK_AI_MODELS[provider] || [];
+        setModelOptions(fallbacks);
+        if (!fallbacks.some(m => m.id === selectedModel)) {
+          const def = fallbacks.find(m => m.isDefault) || fallbacks[0];
+          if (def) setSelectedModel(def.id);
+        }
+      });
+    return () => { active = false; };
+  }, [provider]);
+
+  const handleProviderChange = (newProvider: AIProvider) => {
+    setProvider(newProvider);
+    const fallbacks = FALLBACK_AI_MODELS[newProvider] || [];
+    setModelOptions(fallbacks);
+    const pref = savedModel(newProvider);
+    setSelectedModel(pref);
+  };
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,14 +113,14 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ (không kèm markdown 
 
     try {
       const resp = await askAIChat(
-        'gemini',
+        provider,
         [{ role: 'user', text: systemPrompt }],
         projectName,
         [],
         [],
         0,
-        'gemini-2.5-flash',
-        {},
+        selectedModel,
+        { availableModels: modelOptions.map(m => m.id) },
         undefined,
         undefined,
         'low'
@@ -83,7 +137,7 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ (không kèm markdown 
       setDrafts(parsed);
     } catch (err: any) {
       console.error('Lỗi sinh kế hoạch AI:', err);
-      setError(err?.message || 'Có lỗi khi kết nối với AI. Vui lòng kiểm tra API Key hoặc thử lại.');
+      setError(err?.message || 'Có lỗi khi kết nối với AI. Hãy chọn model khác hoặc kiểm tra API Key trong Cài đặt.');
     } finally {
       setIsLoading(false);
     }
@@ -140,7 +194,7 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ (không kèm markdown 
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 Trợ lý AI Lập kế hoạch công việc
                 <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-500/40 text-indigo-200 border border-indigo-400/30">
-                  Gemini AI
+                  {PROVIDERS.find(p => p.id === provider)?.name || 'AI Copilot'}
                 </span>
               </h3>
               <p className="text-xs text-indigo-200/80">
@@ -158,6 +212,43 @@ Chỉ trả về DUY NHẤT một chuỗi JSON hợp lệ (không kèm markdown 
 
         {/* Content */}
         <div className="p-6 overflow-y-auto flex-1 space-y-5 text-xs">
+          {/* AI Model & Provider Selector */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-600 flex items-center gap-1.5">
+                <Bot className="w-3.5 h-3.5 text-indigo-600" />
+                Dịch vụ AI:
+              </span>
+              <select
+                value={provider}
+                onChange={(e) => handleProviderChange(e.target.value as AIProvider)}
+                className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800"
+              >
+                {PROVIDERS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 flex-1 min-w-[200px] justify-end">
+              <span className="font-semibold text-slate-600 flex items-center gap-1.5 shrink-0">
+                <Cpu className="w-3.5 h-3.5 text-indigo-600" />
+                Mô hình:
+              </span>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 max-w-[240px] truncate"
+              >
+                {modelOptions.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name || m.id} {m.badge ? `(${m.badge})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           {error && (
             <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />

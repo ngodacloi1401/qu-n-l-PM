@@ -12,14 +12,10 @@ import {
   Flame,
   Layers,
   RotateCcw,
-  FolderKanban,
-  Globe,
-  RefreshCw,
   Sparkles,
 } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import type {
-  RedmineIssue,
   RedmineUser,
   RedmineStatus,
   RedmineTracker,
@@ -36,8 +32,6 @@ import {
   DEFAULT_REDMINE_TRACKERS,
   DEFAULT_REDMINE_CUSTOM_FIELDS,
   getStoredConfig,
-  fetchAllIssues,
-  type FetchProgress,
 } from '../../services/redmineApi';
 import {
   getSavedTasks,
@@ -50,11 +44,9 @@ import { ExcelImportModal } from './ExcelImportModal';
 import { PersonalTaskModal } from './PersonalTaskModal';
 import { PersonalTaskAIModal } from './PersonalTaskAIModal';
 
-type SubTab = 'excel' | 'redmine';
-
 interface PersonalTaskViewProps {
-  currentUser: RedmineUser | null;
-  baseUrl: string;
+  currentUser?: RedmineUser | null;
+  baseUrl?: string;
   statuses?: RedmineStatus[];
   trackers?: RedmineTracker[];
   priorities?: RedminePriority[];
@@ -67,15 +59,12 @@ interface PersonalTaskViewProps {
 }
 
 export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
-  currentUser,
-  baseUrl,
+  currentUser = null,
+  baseUrl = '',
   statuses = DEFAULT_REDMINE_STATUSES,
-  trackers = DEFAULT_REDMINE_TRACKERS,
   priorities = DEFAULT_REDMINE_PRIORITIES,
+  trackers = DEFAULT_REDMINE_TRACKERS,
   customFields = DEFAULT_REDMINE_CUSTOM_FIELDS,
-  categories = [],
-  versions = [],
-  memberships = [],
   projects = [],
   selectedProjectId,
 }) => {
@@ -89,10 +78,10 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
     [currentUser, currentApiKey]
   );
 
+  // Load personal/Excel tasks (strictly exclude redmine source tasks)
   const [tasks, setTasks] = useState<PersonalTask[]>(() =>
     getSavedTasks(userScopeKey, currentUserName).filter((task) => task.source !== 'redmine')
   );
-  const [activeTab, setActiveTab] = useState<SubTab>('excel');
   const activeStorageScopeRef = useRef(userScopeKey);
   const skipNextStorageSaveRef = useRef(false);
 
@@ -118,7 +107,6 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   // Filters
   const [search, setSearch] = useState('');
   const [selectedWeek, setSelectedWeek] = useState('all');
-  const [selectedTracker, setSelectedTracker] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedPriority, setSelectedPriority] = useState('all');
@@ -130,150 +118,41 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   const [showAIModal, setShowAIModal] = useState(false);
   const [editingTask, setEditingTask] = useState<PersonalTask | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
-  const [liveRedmineIssues, setLiveRedmineIssues] = useState<RedmineIssue[]>([]);
-  const [isRedmineLoading, setIsRedmineLoading] = useState(false);
-  const [redmineError, setRedmineError] = useState<string | null>(null);
-  const [redmineProgress, setRedmineProgress] = useState<FetchProgress | null>(null);
-  const [redmineReload, setRedmineReload] = useState(0);
-  const redmineRequestRef = useRef(0);
-  const forceRedmineRef = useRef(false);
 
-  useEffect(() => {
-    if (activeTab !== 'redmine') {
-      redmineRequestRef.current += 1;
-      setIsRedmineLoading(false);
-      setRedmineProgress(null);
-      return;
-    }
-    const requestId = ++redmineRequestRef.current;
-    const isCurrent = () => redmineRequestRef.current === requestId;
-    const force = forceRedmineRef.current;
-    forceRedmineRef.current = false;
-    setIsRedmineLoading(true);
-    setRedmineError(null);
-    setRedmineProgress(null);
-    fetchAllIssues({
-      project_id: selectedProjectId && selectedProjectId !== 'all' ? selectedProjectId : undefined,
-      assigned_to_id: currentUser?.id || 'me',
-      status_id: '*',
-    }, (progress) => { if (isCurrent()) setRedmineProgress(progress); }, Number.MAX_SAFE_INTEGER, {
-      force,
-      onCached: (snapshot) => { if (isCurrent()) setLiveRedmineIssues(snapshot.issues); },
-      onBatch: (batch) => { if (isCurrent()) setLiveRedmineIssues(batch); },
-    }).then((result) => { if (isCurrent()) setLiveRedmineIssues(result.issues); })
-      .catch((error) => { if (isCurrent()) setRedmineError(error?.message || 'Không thể tải công việc Redmine.'); })
-      .finally(() => { if (isCurrent()) { setIsRedmineLoading(false); setRedmineProgress(null); } });
-  }, [activeTab, selectedProjectId, currentUser?.id, redmineReload]);
-
-  // Split tasks by source
-  const excelTasks = useMemo(() => tasks.filter((t) => t.source === 'excel' || t.source === 'manual'), [tasks]);
-
-  // Find currently selected project object
-  const currentProjectObj = useMemo(() => {
-    if (!selectedProjectId || selectedProjectId === 'all') return null;
-    return projects.find((p) => String(p.id) === String(selectedProjectId)) || null;
-  }, [selectedProjectId, projects]);
-
-  // Filter tasks by selected project (from top header)
-  // Excel/manual rows are their own local source and never inherit the selected
-  // Redmine project. Redmine rows are rebuilt from live issues instead of copied
-  // into local storage, so each tab has one authoritative source.
-  const scopedExcelTasks = excelTasks;
-  const scopedRedmineTasks = useMemo<PersonalTask[]>(() => liveRedmineIssues
-    .filter((issue) => {
-      if (currentUser && issue.assigned_to?.id !== currentUser.id) return false;
-      if (selectedProjectId && selectedProjectId !== 'all') {
-        return String(issue.project?.id || '') === String(selectedProjectId);
-      }
-      return true;
-    })
-    .map((issue) => ({
-      id: `redmine_${issue.id}`,
-      week: '',
-      assignedDate: issue.start_date || issue.created_on?.slice(0, 10) || '',
-      category: issue.category?.name || 'Không có category',
-      title: issue.subject,
-      description: issue.description || '',
-      trackerId: issue.tracker?.id,
-      trackerName: issue.tracker?.name || 'Task',
-      statusId: issue.status?.id,
-      statusName: issue.status?.name || 'New',
-      priorityId: issue.priority?.id,
-      priorityName: issue.priority?.name || 'Normal',
-      assigneeId: issue.assigned_to?.id,
-      assigneeName: issue.assigned_to?.name || '',
-      parentTaskId: issue.parent?.id,
-      targetVersionId: issue.fixed_version?.id,
-      targetVersionName: issue.fixed_version?.name,
-      doneRatio: issue.done_ratio || 0,
-      estimatedHours: issue.estimated_hours,
-      resultNote: '',
-      dueDate: issue.due_date || '',
-      source: 'redmine',
-      redmineIssueId: issue.id,
-      projectId: issue.project?.id,
-      projectName: issue.project?.name,
-      createdAt: issue.created_on || '',
-      updatedAt: issue.updated_on || '',
-    })), [liveRedmineIssues, currentUser, selectedProjectId]);
-
-  const activeTasks = activeTab === 'excel' ? scopedExcelTasks : scopedRedmineTasks;
-
-  // Dynamic filter options derived from ACTUAL task data (not Redmine API metadata)
-  // 1. Weeks: ONLY for Excel tab, only if weeks exist in data
+  // Dynamic filter options derived from ACTUAL personal task data
   const availableWeeks = useMemo(() => {
-    if (activeTab !== 'excel') return [];
     const set = new Set<string>();
-    activeTasks.forEach((t) => {
+    tasks.forEach((t) => {
       if (t.week && t.week.trim()) set.add(t.week.trim());
     });
     return Array.from(set).sort();
-  }, [activeTasks, activeTab]);
+  }, [tasks]);
 
-  // 2. Trackers: ONLY for Redmine tab, from actual data
-  const availableTrackers = useMemo(() => {
-    if (activeTab !== 'redmine') return [];
-    const set = new Set<string>();
-    activeTasks.forEach((t) => {
-      if (t.trackerName) set.add(t.trackerName);
-    });
-    return Array.from(set).sort();
-  }, [activeTasks, activeTab]);
-
-  // 3. Categories: from actual task data
   const availableCategories = useMemo(() => {
     const set = new Set<string>();
-    activeTasks.forEach((t) => {
+    tasks.forEach((t) => {
       if (t.category && t.category.trim()) set.add(t.category.trim());
     });
     return Array.from(set).sort();
-  }, [activeTasks]);
+  }, [tasks]);
 
-  // 4. Statuses: from actual task data
   const availableStatuses = useMemo(() => {
     const set = new Set<string>();
-    activeTasks.forEach((t) => {
+    tasks.forEach((t) => {
       if (t.statusName) set.add(t.statusName);
     });
     return Array.from(set).sort();
-  }, [activeTasks]);
+  }, [tasks]);
 
-  // 5. Priorities: from actual task data
   const availablePriorities = useMemo(() => {
     const set = new Set<string>();
-    activeTasks.forEach((t) => {
+    tasks.forEach((t) => {
       if (t.priorityName) set.add(t.priorityName);
     });
     return Array.from(set).sort();
-  }, [activeTasks]);
+  }, [tasks]);
 
-  // Auto-reset filters if current value is no longer valid for the selected project
-  useEffect(() => {
-    if (selectedTracker !== 'all' && !availableTrackers.includes(selectedTracker)) {
-      setSelectedTracker('all');
-    }
-  }, [availableTrackers, selectedTracker]);
-
+  // Auto-reset filters if current value is no longer valid
   useEffect(() => {
     if (selectedCategory !== 'all' && !availableCategories.includes(selectedCategory)) {
       setSelectedCategory('all');
@@ -325,7 +204,6 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
     } else {
       setTasks((prev) => [...newTasks, ...prev.filter((task) => task.source !== 'redmine')]);
     }
-    setActiveTab('excel');
     setSelectedWeek('all');
     setSelectedCategory('all');
     setSelectedStatus('all');
@@ -337,17 +215,17 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   const handleExportExcel = () => {
     exportPersonalTasksToExcel(
       filteredTasks,
-      `Ke_hoach_dau_viec_${activeTab}_${new Date().toISOString().split('T')[0]}.xlsx`
+      `Ke_hoach_ca_nhan_${new Date().toISOString().split('T')[0]}.xlsx`
     );
   };
 
   const handleResetSampleData = () => {
-    if (confirm('Xóa toàn bộ công việc Excel và công việc tạo thủ công?')) {
+    if (confirm('Xóa toàn bộ công việc cá nhân và công việc đã nhập từ Excel?')) {
       setTasks([]);
     }
   };
 
-  // KPI Calculations based on activeTasks
+  // KPI Calculations
   const todayStr = new Date().toISOString().split('T')[0];
 
   const isClosedTask = (t: PersonalTask) => {
@@ -357,22 +235,21 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
     return lower.includes('closed') || lower.includes('done') || lower.includes('hoàn thành');
   };
 
-  const totalCount = activeTasks.length;
-  const inProgressCount = activeTasks.filter((t) => !isClosedTask(t) && t.statusName?.toLowerCase().includes('in progress')).length;
-  const doneCount = activeTasks.filter((t) => isClosedTask(t)).length;
-  const urgentCount = activeTasks.filter((t) => {
+  const totalCount = tasks.length;
+  const inProgressCount = tasks.filter((t) => !isClosedTask(t) && t.statusName?.toLowerCase().includes('in progress')).length;
+  const doneCount = tasks.filter((t) => isClosedTask(t)).length;
+  const urgentCount = tasks.filter((t) => {
     const p = (t.priorityName || '').toLowerCase();
     return !isClosedTask(t) && (p.includes('urgent') || p.includes('immediate') || p.includes('gấp') || p.includes('must have'));
   }).length;
-  const overdueCount = activeTasks.filter((t) => t.dueDate && t.dueDate < todayStr && !isClosedTask(t)).length;
-  const dueTodayCount = activeTasks.filter((t) => t.dueDate && t.dueDate === todayStr && !isClosedTask(t)).length;
+  const overdueCount = tasks.filter((t) => t.dueDate && t.dueDate < todayStr && !isClosedTask(t)).length;
+  const dueTodayCount = tasks.filter((t) => t.dueDate && t.dueDate === todayStr && !isClosedTask(t)).length;
   const donePercent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
 
   // Filtered tasks
   const filteredTasks = useMemo(() => {
-    return activeTasks.filter((t) => {
-      if (activeTab === 'excel' && selectedWeek !== 'all' && t.week !== selectedWeek) return false;
-      if (activeTab === 'redmine' && selectedTracker !== 'all' && t.trackerName !== selectedTracker) return false;
+    return tasks.filter((t) => {
+      if (selectedWeek !== 'all' && t.week !== selectedWeek) return false;
       if (selectedCategory !== 'all' && t.category !== selectedCategory) return false;
       if (selectedStatus !== 'all' && t.statusName !== selectedStatus) return false;
       if (selectedPriority !== 'all' && t.priorityName !== selectedPriority) return false;
@@ -385,90 +262,67 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
         const inResult = t.resultNote?.toLowerCase().includes(q);
         const inWeek = t.week?.toLowerCase().includes(q);
         const inCat = t.category?.toLowerCase().includes(q);
-        const inTracker = t.trackerName?.toLowerCase().includes(q);
-        const inParent = String(t.parentTaskId || '').includes(q);
-        const inProject = t.projectName?.toLowerCase().includes(q);
-        if (!inTitle && !inDesc && !inResult && !inWeek && !inCat && !inTracker && !inParent && !inProject) return false;
+        if (!inTitle && !inDesc && !inResult && !inWeek && !inCat) return false;
       }
 
       return true;
     });
-  }, [activeTasks, activeTab, selectedWeek, selectedTracker, selectedCategory, selectedStatus, selectedPriority, overdueOnly, search, todayStr, statuses]);
-
-  // Reset filters when switching tabs
-  const switchTab = (tab: SubTab) => {
-    setActiveTab(tab);
-    setSearch('');
-    setSelectedWeek('all');
-    setSelectedTracker('all');
-    setSelectedCategory('all');
-    setSelectedStatus('all');
-    setSelectedPriority('all');
-    setOverdueOnly(false);
-  };
+  }, [tasks, selectedWeek, selectedCategory, selectedStatus, selectedPriority, overdueOnly, search, todayStr, statuses]);
 
   return (
     <div className="space-y-5">
       {importNotice && (
         <div role="status" aria-live="polite" className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl flex items-center justify-between gap-3 text-sm">
-          <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />{importNotice}</span>
-          <button type="button" onClick={() => setImportNotice(null)} className="text-emerald-700 underline text-xs">Đóng</button>
+          <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600" />{importNotice}</span>
+          <button type="button" onClick={() => setImportNotice(null)} className="text-emerald-700 underline text-xs cursor-pointer">Đóng</button>
         </div>
       )}
-      {/* Source scope: Excel is local; Redmine is live and project-scoped. */}
-      <div className={`px-5 py-3.5 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-3 border ${activeTab === 'excel' ? 'bg-emerald-950 text-white border-emerald-900' : 'bg-slate-900 text-white border-slate-800'}`}>
-        <div className="flex items-center gap-3">
-          <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${activeTab === 'excel' ? 'bg-emerald-500/20 border-emerald-400/30 text-emerald-200' : 'bg-red-500/20 border-red-400/30 text-red-200'}`}>
-            {activeTab === 'excel' ? <FileSpreadsheet className="w-5 h-5" /> : <Globe className="w-5 h-5" />}
+
+      {/* Header Banner: Independent Personal Task Space */}
+      <div className="px-5 py-4 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-4 border bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-950 text-white border-emerald-900">
+        <div className="flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
+            <FileSpreadsheet className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-sm font-bold">{activeTab === 'excel' ? 'Kế hoạch từ Excel và công việc tạo thủ công' : 'Công việc trực tiếp từ Redmine'}</div>
-            <p className="text-[11px] text-slate-400">
-              {activeTab === 'excel'
-                ? 'Lưu riêng trên trình duyệt, không phụ thuộc dự án Redmine đang chọn.'
-                : `${currentUserName || currentUser?.login || 'Người dùng hiện tại'} · ${currentProjectObj?.name || 'Tất cả dự án'} · Chỉ đọc trong màn này`}
+            <div className="text-sm font-bold flex items-center gap-2">
+              Kế hoạch công việc cá nhân (Excel & Thủ công)
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 border border-emerald-400/30">
+                Độc lập
+              </span>
+            </div>
+            <p className="text-xs text-emerald-200/80 mt-0.5">
+              Quản lý tiến độ cá nhân từ file Excel hoặc tạo mới. Lưu trữ độc lập trên trình duyệt, không lẫn lộn với Redmine.
             </p>
           </div>
         </div>
-        <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${activeTab === 'excel' ? 'bg-emerald-900 border-emerald-700 text-emerald-100' : 'bg-red-950 border-red-800 text-red-100'}`}>
-          Nguồn: {activeTab === 'excel' ? 'Excel / Local' : 'Redmine Live'}
-        </span>
-      </div>
 
-      {/* Sub-tabs: Excel vs Redmine */}
-      <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-        <button
-          onClick={() => switchTab('excel')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all cursor-pointer ${
-            activeTab === 'excel'
-              ? 'bg-white text-emerald-700 shadow-sm border border-slate-200'
-              : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'
-          }`}
-        >
-          <FolderKanban className="w-4 h-4" />
-          <span>Kế hoạch Excel</span>
-          <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-            activeTab === 'excel' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'
-          }`}>
-            {scopedExcelTasks.length}
-          </span>
-        </button>
-        <button
-          onClick={() => switchTab('redmine')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all cursor-pointer ${
-            activeTab === 'redmine'
-              ? 'bg-white text-red-700 shadow-sm border border-slate-200'
-              : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'
-          }`}
-        >
-          <Globe className="w-4 h-4" />
-          <span>Việc Redmine</span>
-          <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-            activeTab === 'redmine' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-500'
-          }`}>
-            {scopedRedmineTasks.length}
-          </span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAIModal(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4 text-purple-200" />
+            <span>AI Lên kế hoạch</span>
+          </button>
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Nhập từ Excel</span>
+          </button>
+          <button
+            onClick={() => {
+              setEditingTask(null);
+              setShowCreateModal(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white text-emerald-900 hover:bg-emerald-50 rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4 text-emerald-700" />
+            <span>Thêm việc mới</span>
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -487,7 +341,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
         {/* In Progress */}
         <div className="bg-white p-3.5 rounded-xl border border-amber-200 bg-amber-50/20 shadow-xs flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider">In Progress</div>
+            <div className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider">Đang làm</div>
             <div className="text-xl font-bold text-amber-900 mt-0.5">{inProgressCount}</div>
           </div>
           <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center text-amber-800">
@@ -498,7 +352,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
         {/* Completed */}
         <div className="bg-white p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-xs flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">Closed / Done</div>
+            <div className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">Hoàn thành</div>
             <div className="text-xl font-bold text-emerald-800 mt-0.5">
               {doneCount} <span className="text-xs font-normal text-emerald-600">({donePercent}%)</span>
             </div>
@@ -511,7 +365,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
         {/* Urgent */}
         <div className="bg-white p-3.5 rounded-xl border border-rose-200 bg-rose-50/20 shadow-xs flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-semibold text-rose-700 uppercase tracking-wider">Urgent / Gấp</div>
+            <div className="text-[11px] font-semibold text-rose-700 uppercase tracking-wider">Ưu tiên cao / Gấp</div>
             <div className="text-xl font-bold text-rose-800 mt-0.5">{urgentCount}</div>
           </div>
           <div className="w-9 h-9 rounded-lg bg-rose-100 flex items-center justify-center text-rose-800">
@@ -552,98 +406,46 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={activeTab === 'excel'
-                ? 'Tìm theo tiêu đề, tracker, ghi chú...'
-                : 'Tìm theo tiêu đề, dự án, tracker...'}
-              className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-colors"
+              placeholder="Tìm theo tiêu đề, nhóm việc, ghi chú, đợt tuần..."
+              className="w-full text-xs pl-9 pr-3 py-2 bg-slate-50 hover:bg-white focus:bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none transition-colors"
             />
           </div>
         </div>
 
-        {/* Right: Action Buttons */}
+        {/* Right: Export & Clear Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          {activeTab === 'excel' && (
-            <>
-              <button
-                onClick={() => setShowAIModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
-                title="Lập kế hoạch công việc tự động bằng Gemini AI"
-              >
-                <Sparkles className="w-4 h-4 text-purple-200" />
-                <span>AI Lập kế hoạch</span>
-              </button>
-
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>Nhập từ Excel</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setEditingTask(null);
-                  setShowCreateModal(true);
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Thêm việc</span>
-              </button>
-            </>
-          )}
-
-          {activeTab === 'redmine' && (
-            <button
-              onClick={() => { forceRedmineRef.current = true; setRedmineReload((value) => value + 1); }}
-              disabled={isRedmineLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-            >
-              <RefreshCw className={`w-4 h-4 ${isRedmineLoading ? 'animate-spin' : ''}`} />
-              <span>{isRedmineLoading ? 'Đang đồng bộ…' : 'Làm mới từ Redmine'}</span>
-            </button>
-          )}
-
-          {activeTab === 'excel' && <>
-            <button onClick={handleExportExcel} className="inline-flex items-center gap-1.5 px-3 py-2 text-slate-700 hover:bg-slate-100 rounded-xl border border-slate-300 text-xs font-semibold transition-colors cursor-pointer">
-              <Download className="w-4 h-4" /><span>Xuất Excel</span>
-            </button>
-            <button onClick={handleResetSampleData} title="Xóa toàn bộ dữ liệu Excel/thủ công" className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors cursor-pointer">
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          </>}
+          <button
+            onClick={handleExportExcel}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-slate-700 hover:bg-slate-100 rounded-xl border border-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+          >
+            <Download className="w-4 h-4" />
+            <span>Xuất Excel</span>
+          </button>
+          <button
+            onClick={handleResetSampleData}
+            title="Xóa toàn bộ dữ liệu công việc cá nhân"
+            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl border border-slate-200 transition-colors cursor-pointer"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
-      {activeTab === 'redmine' && isRedmineLoading && (
-        <div role="status" className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
-          <RefreshCw className="w-4 h-4 animate-spin" />
-          <span>{redmineProgress ? `Đang tải việc Redmine: ${redmineProgress.loaded}/${redmineProgress.total}` : 'Đang kết nối Redmine…'}</span>
-        </div>
-      )}
-      {activeTab === 'redmine' && redmineError && (
-        <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-xl text-sm flex items-center justify-between gap-3">
-          <span>{redmineError}</span>
-          <button type="button" onClick={() => { forceRedmineRef.current = true; setRedmineReload((value) => value + 1); }} className="font-semibold underline">Thử lại</button>
-        </div>
-      )}
-
-      {/* Filter Row: Dynamic filters matching tab content */}
+      {/* Filter Row: Dynamic filters matching personal task content */}
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center gap-3 text-xs">
         <div className="flex items-center gap-1 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
           <Filter className="w-3.5 h-3.5" />
           <span>Lọc:</span>
         </div>
 
-        {/* Week filter: ONLY for Excel tab, only if weeks exist in data */}
-        {activeTab === 'excel' && availableWeeks.length > 0 && (
+        {/* Week filter */}
+        {availableWeeks.length > 0 && (
           <select
             value={selectedWeek}
             onChange={(e) => setSelectedWeek(e.target.value)}
             className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
           >
-            <option value="all">Tất cả tuần</option>
+            <option value="all">Tất cả tuần / đợt</option>
             {availableWeeks.map((w) => (
               <option key={w} value={w}>
                 {w}
@@ -652,30 +454,14 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           </select>
         )}
 
-        {/* Tracker filter: ONLY for Redmine tab */}
-        {activeTab === 'redmine' && availableTrackers.length > 0 && (
-          <select
-            value={selectedTracker}
-            onChange={(e) => setSelectedTracker(e.target.value)}
-            className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
-          >
-            <option value="all">Tất cả Tracker</option>
-            {availableTrackers.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        )}
-
-        {/* Category filter: Both tabs, from actual data */}
+        {/* Category filter */}
         {availableCategories.length > 0 && (
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 font-medium"
           >
-            <option value="all">Tất cả {activeTab === 'excel' ? 'Nhóm việc' : 'Category'}</option>
+            <option value="all">Tất cả nhóm việc</option>
             {availableCategories.map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -684,7 +470,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           </select>
         )}
 
-        {/* Status filter: Both tabs, from actual data */}
+        {/* Status filter */}
         {availableStatuses.length > 0 && (
           <select
             value={selectedStatus}
@@ -700,7 +486,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           </select>
         )}
 
-        {/* Priority filter: Both tabs, from actual data */}
+        {/* Priority filter */}
         {availablePriorities.length > 0 && (
           <select
             value={selectedPriority}
@@ -727,8 +513,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           <span className={overdueOnly ? 'text-rose-700 font-bold' : ''}>Chỉ việc quá hạn</span>
         </label>
 
-        {((activeTab === 'excel' && selectedWeek !== 'all') ||
-          (activeTab === 'redmine' && selectedTracker !== 'all') ||
+        {(selectedWeek !== 'all' ||
           selectedCategory !== 'all' ||
           selectedStatus !== 'all' ||
           selectedPriority !== 'all' ||
@@ -737,16 +522,15 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           <button
             onClick={() => {
               setSelectedWeek('all');
-              setSelectedTracker('all');
               setSelectedCategory('all');
               setSelectedStatus('all');
               setSelectedPriority('all');
               setOverdueOnly(false);
               setSearch('');
             }}
-            className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold underline cursor-pointer ml-auto"
+            className="text-xs text-emerald-700 hover:text-emerald-900 font-semibold underline cursor-pointer ml-auto"
           >
-            Xóa bộ lọc (Hiển thị {filteredTasks.length}/{activeTasks.length})
+            Xóa bộ lọc (Hiển thị {filteredTasks.length}/{tasks.length})
           </button>
         )}
       </div>
@@ -754,19 +538,34 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
       {/* Empty state */}
       {filteredTasks.length === 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-4">
-            {activeTab === 'excel' ? <FileSpreadsheet className="w-8 h-8" /> : <Globe className="w-8 h-8" />}
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600 mb-4">
+            <FileSpreadsheet className="w-8 h-8" />
           </div>
-          <h4 className="text-base font-bold text-slate-700 mb-1">
-            {activeTab === 'excel'
-              ? 'Chưa có công việc cá nhân nào'
-              : (isRedmineLoading ? 'Đang tải việc từ Redmine' : 'Không có việc Redmine phù hợp')}
+          <h4 className="text-base font-bold text-slate-800 mb-1">
+            Chưa có công việc cá nhân nào
           </h4>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            {activeTab === 'excel'
-              ? 'Nhấn "Nhập từ Excel" để import danh sách công việc, hoặc "Thêm việc" để tạo thủ công.'
-              : 'Tab này chỉ hiển thị issue Redmine được giao cho bạn trong dự án đang chọn.'}
+          <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
+            Nhấn "Nhập từ Excel" để đưa file kế hoạch của bạn vào, hoặc "Thêm việc mới" để tạo thủ công, hoặc dùng "AI Lên kế hoạch".
           </p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Nhập file Excel</span>
+            </button>
+            <button
+              onClick={() => {
+                setEditingTask(null);
+                setShowCreateModal(true);
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Tạo việc thủ công</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -776,10 +575,9 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           tasks={filteredTasks}
           statuses={statuses}
           onUpdateTask={handleUpdateTask}
-          readOnly={activeTab === 'redmine'}
+          readOnly={false}
           baseUrl={baseUrl}
           onEditTask={(t) => {
-            if (activeTab === 'redmine') return;
             setEditingTask(t);
             setShowCreateModal(true);
           }}
@@ -803,14 +601,10 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           }}
           onSave={handleSaveModalTask}
           onDelete={handleDeleteTask}
-          trackers={trackers}
           statuses={statuses}
           priorities={priorities}
-          customFields={customFields}
           existingWeeks={availableWeeks}
           existingCategories={availableCategories}
-          projects={projects}
-          currentUser={currentUser}
         />
       )}
 
@@ -823,7 +617,6 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           projectName={projects.find((p) => String(p.id) === selectedProjectId)?.name || 'Dự án chung'}
         />
       )}
-
     </div>
   );
 };

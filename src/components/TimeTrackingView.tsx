@@ -10,6 +10,7 @@ import {
   TrendingUp,
   Download,
   RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 import { RedmineTimeEntry, RedmineProject } from '../types/redmine';
 import { fetchReportTimeEntries, logTimeEntry } from '../services/redmineApi';
@@ -17,11 +18,13 @@ import { downloadTimeEntriesExcel } from '../services/timeReport';
 
 interface TimeTrackingViewProps {
   selectedProject: RedmineProject | undefined;
+  baseUrl?: string;
   onRefresh: () => void;
 }
 
 export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
   selectedProject,
+  baseUrl,
   onRefresh,
 }) => {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
@@ -118,6 +121,22 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
           <label className="text-xs text-slate-600">Thành viên<select aria-label="Lọc log time theo thành viên" value={selectedUserId} onChange={e => { setSelectedUserId(e.target.value); setEntryPage(1); }} className="block bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm mt-1 min-w-44"><option value="all">Tất cả thành viên</option>{users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label>
           <button disabled={loadingEntries} onClick={() => setReload(n => n + 1)} className="inline-flex items-center gap-1.5 px-3 py-2 text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-300 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40"><RefreshCw className={`w-4 h-4 ${loadingEntries ? 'animate-spin' : ''}`} />Tải lại</button>
           <button disabled={loadingEntries || !filteredEntries.length} onClick={() => downloadTimeEntriesExcel(filteredEntries, { project: selectedProject?.name || 'Tất cả dự án', from, to })} className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-40"><Download className="w-4 h-4" />Xuất Excel</button>
+          {baseUrl && (
+            <a
+              href={
+                selectedProject
+                  ? `${baseUrl.replace(/\/+$/, '')}/projects/${selectedProject.identifier || selectedProject.id}/time_entries`
+                  : `${baseUrl.replace(/\/+$/, '')}/time_entries`
+              }
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              title="Mở trực tiếp trang Nhật ký giờ làm trên AnyBIM Redmine Web"
+            >
+              <ExternalLink className="w-4 h-4" />
+              <span>Mở Redmine (Time Entries)</span>
+            </a>
+          )}
           <button
             onClick={() => setShowLogModal(true)}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
@@ -223,9 +242,35 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
                       <td className="py-2.5 px-3 font-semibold text-slate-800">{entry.user?.name}</td>
                       <td className="py-2.5 px-3 text-slate-700">
                         {entry.issue ? (
-                          <span className="font-mono text-indigo-600 font-bold">#{entry.issue.id}</span>
+                          baseUrl ? (
+                            <a
+                              href={`${baseUrl.replace(/\/+$/, '')}/issues/${entry.issue.id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-mono text-indigo-600 font-bold hover:underline inline-flex items-center gap-1"
+                              title="Mở trên Redmine"
+                            >
+                              #{entry.issue.id}
+                              <ExternalLink className="w-3 h-3 text-slate-400 hover:text-indigo-600" />
+                            </a>
+                          ) : (
+                            <span className="font-mono text-indigo-600 font-bold">#{entry.issue.id}</span>
+                          )
                         ) : (
-                          <span className="text-slate-400">Dự án chung</span>
+                          baseUrl && entry.project ? (
+                            <a
+                              href={`${baseUrl.replace(/\/+$/, '')}/projects/${entry.project.id}/time_entries`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-slate-500 hover:text-indigo-600 hover:underline inline-flex items-center gap-1"
+                              title="Mở nhật ký giờ làm dự án trên Redmine"
+                            >
+                              <span>Dự án chung</span>
+                              <ExternalLink className="w-3 h-3 text-slate-400 hover:text-indigo-600" />
+                            </a>
+                          ) : (
+                            <span className="text-slate-400">Dự án chung</span>
+                          )
                         )}
                       </td>
                       <td className="py-2.5 px-3 font-mono font-bold text-amber-700">
@@ -258,9 +303,28 @@ export const TimeTrackingView: React.FC<TimeTrackingViewProps> = ({
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200">
             <h3 className="text-base font-bold text-slate-900 mb-1">Ghi nhận giờ làm vào Redmine</h3>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-xs text-slate-500 mb-3">
               Dữ liệu sẽ được lưu đồng bộ trực tiếp vào hệ thống Redmine
             </p>
+            {baseUrl && (
+              <div className="mb-4 p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-xs">
+                <span className="text-slate-600">Hoặc ghi nhận trên Web:</span>
+                <a
+                  href={
+                    selectedProject
+                      ? `${baseUrl.replace(/\/+$/, '')}/projects/${selectedProject.identifier || selectedProject.id}/time_entries/new${issueId ? `?issue_id=${issueId}` : ''}`
+                      : `${baseUrl.replace(/\/+$/, '')}/time_entries/new${issueId ? `?issue_id=${issueId}` : ''}`
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-indigo-600 font-semibold hover:underline"
+                  title="Mở form ghi nhận giờ làm trên Redmine Web"
+                >
+                  <span>Mở form Redmine Web</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            )}
 
             {errorMsg && (
               <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">

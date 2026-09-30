@@ -824,12 +824,6 @@ export interface AIModelOption {
 export type AIProvider = 'gemini' | 'openai' | 'codex' | 'anthropic';
 
 export const AVAILABLE_AI_MODELS: AIModelOption[] = [
-  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', description: 'Model Flash mới nhất cho phân tích phức tạp', badge: 'Mới nhất' },
-  { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', description: 'Model Flash ổn định cho quy trình nhiều bước' },
-  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', description: 'Cân bằng tốc độ và khả năng phân tích' },
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', description: 'Model Flash ổn định cho công việc hằng ngày' },
-  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite', description: 'Nhanh và tiết kiệm cho dữ liệu lớn' },
-  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro Preview', description: 'Phân tích chuyên sâu; model preview', badge: 'Chuyên sâu' },
   {
     id: 'gemini-2.5-flash',
     name: 'Gemini 2.5 Flash',
@@ -838,21 +832,34 @@ export const AVAILABLE_AI_MODELS: AIModelOption[] = [
     isDefault: true,
   },
   {
-    id: 'gemini-2.5-flash-lite',
-    name: 'Gemini 2.5 Flash-Lite',
-    description: 'Model nhẹ cho báo cáo ngắn',
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    description: 'Model thế hệ 2.0 tốc độ cao, ổn định tuyệt đối cho phân tích',
     badge: 'Tốc độ cao',
   },
   {
-    id: 'gemini-3.1-flash-lite',
-    name: 'Gemini 3.1 Flash-Lite',
-    description: 'Model Flash-Lite thế hệ mới',
+    id: 'gemini-1.5-flash',
+    name: 'Gemini 1.5 Flash',
+    description: 'Model ổn định cao, tương thích tốt với mọi gói API key',
+    badge: 'Ổn định',
   },
   {
     id: 'gemini-2.5-pro',
     name: 'Gemini 2.5 Pro',
     description: 'Mô hình tư duy chuyên sâu, phân tích rủi ro toàn diện',
     badge: 'Chuyên sâu',
+  },
+  {
+    id: 'gemini-1.5-pro',
+    name: 'Gemini 1.5 Pro',
+    description: 'Model ngữ cảnh siêu dài, phân tích dự án nhiều đầu việc',
+    badge: 'Ngữ cảnh lớn',
+  },
+  {
+    id: 'gemini-2.0-flash-lite',
+    name: 'Gemini 2.0 Flash-Lite',
+    description: 'Model nhẹ cho phản hồi nhanh và tiết kiệm quota',
+    badge: 'Tiết kiệm',
   },
 ];
 

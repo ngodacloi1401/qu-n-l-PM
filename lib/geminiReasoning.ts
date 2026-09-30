@@ -9,18 +9,21 @@ export function outputTokenLimit(effort: ReasoningEffort) {
   return effort === 'minimal' ? 2_048 : effort === 'medium' ? 6_144 : effort === 'high' ? 8_192 : 4_096;
 }
 
-export function geminiThinkingConfig(model: string, effort: ReasoningEffort): { thinkingConfig: ThinkingConfig } {
+export function geminiThinkingConfig(model: string, effort: ReasoningEffort): { thinkingConfig?: ThinkingConfig } {
   if (/^gemini-2\.5/i.test(model)) {
     const thinkingBudget = effort === 'high' ? 24_576 : effort === 'medium' ? 8_192 : 1_024;
     return { thinkingConfig: { thinkingBudget } };
   }
-  const doesNotSupportMinimal = /^gemini-(?:3\.[78]|3\.1-pro)/i.test(model);
-  const resolved = effort === 'minimal' && doesNotSupportMinimal ? 'low' : effort;
-  const levels: Record<ReasoningEffort, ThinkingLevel> = {
-    minimal: ThinkingLevel.MINIMAL,
-    low: ThinkingLevel.LOW,
-    medium: ThinkingLevel.MEDIUM,
-    high: ThinkingLevel.HIGH,
-  };
-  return { thinkingConfig: { thinkingLevel: levels[resolved] } };
+  if (/thinking|^gemini-(?:3\.[78]|3\.1-pro)/i.test(model)) {
+    const doesNotSupportMinimal = /^gemini-(?:3\.[78]|3\.1-pro)/i.test(model);
+    const resolved = effort === 'minimal' && doesNotSupportMinimal ? 'low' : effort;
+    const levels: Record<ReasoningEffort, ThinkingLevel> = {
+      minimal: ThinkingLevel.MINIMAL,
+      low: ThinkingLevel.LOW,
+      medium: ThinkingLevel.MEDIUM,
+      high: ThinkingLevel.HIGH,
+    };
+    return { thinkingConfig: { thinkingLevel: levels[resolved] } };
+  }
+  return {};
 }

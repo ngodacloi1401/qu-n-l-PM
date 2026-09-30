@@ -10,6 +10,7 @@ import {
   BarChart2,
   ShieldAlert,
   ArrowRight,
+  ExternalLink,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -33,6 +34,7 @@ interface DashboardAnalyticsProps {
   statuses: RedmineStatus[];
   loadedCount: number;
   totalAvailable: number;
+  baseUrl?: string;
   onSelectIssue: (issue: RedmineIssue) => void;
 }
 
@@ -50,7 +52,7 @@ const COLORS = [
 export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
   issues,
   versions,
-  statuses, loadedCount, totalAvailable,
+  statuses, loadedCount, totalAvailable, baseUrl,
   onSelectIssue,
 }) => {
   const { total, closed, inProgress, overdueIssues, blockedIssues, completionRate, workload: workloadChartData } = calculatePMAnalytics(issues, statuses);
@@ -295,6 +297,18 @@ export const DashboardAnalytics: React.FC<DashboardAnalyticsProps> = ({
                   <span className="text-xs font-semibold text-slate-800 line-clamp-1">{iss.subject}</span>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0 text-xs">
+                  {baseUrl && (
+                    <a
+                      href={`${baseUrl.replace(/\/+$/, '')}/issues/${iss.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Mở trên Redmine"
+                      className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-100 flex-shrink-0"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
                   <span className="text-rose-600 font-bold">Hạn: {iss.due_date}</span>
                   <span className="text-slate-500">{iss.assigned_to?.name || 'Chưa gán'}</span>
                   <ArrowRight className="w-3.5 h-3.5 text-slate-400" />

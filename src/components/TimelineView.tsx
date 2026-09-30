@@ -19,6 +19,7 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
+  ExternalLink,
 } from 'lucide-react';
 import type { RedmineIssue, RedmineProject, RedmineStatus, RedmineTracker, RedminePriority, RedmineUser } from '../types/redmine';
 import type { PersonalTask } from '../types/personalTask';
@@ -42,6 +43,7 @@ interface TimelineViewProps {
   projects: RedmineProject[];
   selectedProjectId: string;
   currentUser: RedmineUser | null;
+  baseUrl?: string;
   onSelectIssue?: (issue: RedmineIssue) => void;
   onSelectPersonalTask?: (task: PersonalTask) => void;
   onOpenCreateIssue?: () => void;
@@ -61,6 +63,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
   projects,
   selectedProjectId,
   currentUser,
+  baseUrl,
   onSelectIssue,
   onSelectPersonalTask,
   onOpenCreateIssue,
@@ -522,6 +525,18 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                   <span className="font-semibold text-slate-800 truncate" title={item.title}>
                     {item.title}
                   </span>
+                  {item.source === 'redmine' && item.rawIssue && baseUrl && (
+                    <a
+                      href={`${baseUrl.replace(/\/+$/, '')}/issues/${item.rawIssue.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-slate-400 hover:text-indigo-600 p-0.5 rounded hover:bg-slate-100 flex-shrink-0"
+                      title="Mở trên Redmine"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
                   <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium flex-shrink-0 ${getStatusBadgeClass(item.statusName)}`}>
                     {item.statusName}
                   </span>
@@ -672,6 +687,19 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                     <span className="font-semibold text-xs text-slate-800 truncate flex-1 min-w-[60px]">
                       {item.title}
                     </span>
+
+                    {item.source === 'redmine' && item.rawIssue && baseUrl && (
+                      <a
+                        href={`${baseUrl.replace(/\/+$/, '')}/issues/${item.rawIssue.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                        title="Mở trên Redmine"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
 
                     {/* Date label right side */}
                     <span className="text-[10px] text-slate-400 font-mono flex-shrink-0 hidden md:inline">

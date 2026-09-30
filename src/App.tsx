@@ -625,6 +625,7 @@ export default function App() {
 
         {activeView === 'timeline' && (
           <TimelineView
+            baseUrl={config.baseUrl}
             issues={filteredIssues}
             statuses={statuses}
             trackers={trackers}
@@ -649,6 +650,7 @@ export default function App() {
 
         {activeView === 'analytics' && (
           <DashboardAnalytics
+            baseUrl={config.baseUrl}
             issues={filteredIssues}
             loadedCount={issues.length}
             totalAvailable={totalAvailableCount}
@@ -660,6 +662,7 @@ export default function App() {
 
         {activeView === 'time' && (
           <TimeTrackingView
+            baseUrl={config.baseUrl}
             selectedProject={selectedProject}
             onRefresh={() => loadProjectData(selectedProjectId, filters)}
           />

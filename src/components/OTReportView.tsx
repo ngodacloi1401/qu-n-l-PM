@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, RefreshCw, Clock, Users, Hash } from 'lucide-react';
+import { Download, RefreshCw, Clock, Users, Hash, ExternalLink } from 'lucide-react';
 import { fetchOTReport } from '../services/redmineApi';
 import { downloadOTExcel, summarizeOT, OTRecord } from '../services/otReport';
 import type { RedmineIssue } from '../types/redmine';
@@ -91,6 +91,22 @@ export function OTReportView({ projectId, projectName, baseUrl, onSelectIssue }:
         <button onClick={() => { forceNext.current = true; setReload(n => n + 1); }} disabled={loading || syncing} className="inline-flex items-center gap-1.5 px-3 py-2 text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-300 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40">
           <RefreshCw className={`w-4 h-4 ${loading || syncing ? 'animate-spin' : ''}`} />Tải lại
         </button>
+        {baseUrl && (
+          <a
+            href={
+              projectId !== 'all'
+                ? `${baseUrl.replace(/\/+$/, '')}/projects/${projectId}/time_entries`
+                : `${baseUrl.replace(/\/+$/, '')}/time_entries`
+            }
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            title="Mở trang Nhật ký giờ làm trên AnyBIM Redmine Web"
+          >
+            <ExternalLink className="w-4 h-4" />
+            <span>Mở Redmine (Giờ làm)</span>
+          </a>
+        )}
         <button onClick={exportExcel} disabled={loading || syncing || !!error || exporting || !filtered.length} className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-40">
           <Download className="w-4 h-4" />{exporting ? 'Đang xuất…' : 'Xuất Excel'}
         </button>
@@ -165,7 +181,22 @@ export function OTReportView({ projectId, projectName, baseUrl, onSelectIssue }:
                 {filtered.map(({ entry: e, issue: i }) => <tr key={e.id} className="hover:bg-slate-50/80">
                   <td className="py-2.5 px-3 font-mono text-slate-600 whitespace-nowrap">{e.spent_on}</td>
                   <td className="py-2.5 px-3 font-semibold text-slate-800">{e.user.name}</td>
-                  <td className="py-2.5 px-3"><button onClick={() => onSelectIssue(i)} className="text-indigo-600 text-left hover:underline">#{i.id} {i.subject}</button></td>
+                  <td className="py-2.5 px-3">
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => onSelectIssue(i)} className="text-indigo-600 text-left hover:underline truncate max-w-md">#{i.id} {i.subject}</button>
+                      {baseUrl && (
+                        <a
+                          href={`${baseUrl.replace(/\/+$/, '')}/issues/${i.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Mở trên Redmine"
+                          className="text-slate-400 hover:text-indigo-600 p-0.5 rounded hover:bg-slate-100 flex-shrink-0"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  </td>
                   <td className="py-2.5 px-3 text-slate-700">{i.tracker.name}</td>
                   <td className="py-2.5 px-3 font-mono font-bold text-orange-700">{Number(e.hours).toFixed(2)}</td>
                   <td className="py-2.5 px-3 text-slate-500">{e.comments || '—'}</td>
