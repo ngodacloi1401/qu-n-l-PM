@@ -12,6 +12,7 @@ import {
   Building2,
   Lock,
   FileSpreadsheet,
+  CalendarRange,
 } from 'lucide-react';
 import { RedmineProject, RedmineUser, ViewMode } from '../types/redmine';
 
@@ -223,6 +224,19 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <TableProperties className="w-4 h-4" />
               <span>Danh sách việc</span>
+            </button>
+
+            <button
+              id="tab-timeline"
+              onClick={() => onSelectView('timeline')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                activeView === 'timeline'
+                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <CalendarRange className="w-4 h-4" />
+              <span>Lịch trình (Timeline)</span>
             </button>
 
             <button

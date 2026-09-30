@@ -46,6 +46,10 @@ import { IssueDetailModal } from './components/IssueDetailModal';
 import { CreateIssueModal } from './components/CreateIssueModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PersonalTaskView } from './components/personalTask/PersonalTaskView';
+import { TimelineView } from './components/TimelineView';
+import { PersonalTaskModal } from './components/personalTask/PersonalTaskModal';
+import { getSavedTasks, saveTasks, getUserScopeKey } from './services/personalTaskStorage';
+import type { PersonalTask } from './types/personalTask';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { isIssueClosed, vietnamToday } from './services/pmAnalytics';
 
@@ -80,6 +84,22 @@ export default function App() {
     });
   }, []);
 
+  const handleSavePersonalTask = (savedTask: PersonalTask) => {
+    const userScopeKey = getUserScopeKey(currentUser, config.apiKey);
+    const existing = getSavedTasks(userScopeKey);
+    const index = existing.findIndex(t => t.id === savedTask.id);
+    let updated: PersonalTask[];
+    if (index >= 0) {
+      updated = [...existing];
+      updated[index] = savedTask;
+    } else {
+      updated = [savedTask, ...existing];
+    }
+    saveTasks(updated, userScopeKey);
+    setShowPersonalTaskModal(false);
+    setEditingPersonalTask(null);
+  };
+
   const handleLogout = async () => {
     await logout();
     setIsAuthenticated(false);
@@ -89,6 +109,8 @@ export default function App() {
 
   // Modals
   const [selectedIssueForModal, setSelectedIssueForModal] = useState<RedmineIssue | null>(null);
+  const [editingPersonalTask, setEditingPersonalTask] = useState<PersonalTask | null>(null);
+  const [showPersonalTaskModal, setShowPersonalTaskModal] = useState<boolean>(false);
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [aiConfigRevision, setAIConfigRevision] = useState(0);
@@ -601,6 +623,30 @@ export default function App() {
           />
         )}
 
+        {activeView === 'timeline' && (
+          <TimelineView
+            issues={filteredIssues}
+            statuses={statuses}
+            trackers={trackers}
+            priorities={priorities}
+            projects={projects}
+            selectedProjectId={selectedProjectId}
+            currentUser={currentUser}
+            onSelectIssue={(iss) => setSelectedIssueForModal(iss)}
+            onSelectPersonalTask={(pt) => {
+              setEditingPersonalTask(pt);
+              setShowPersonalTaskModal(true);
+            }}
+            onOpenCreateIssue={() => setShowCreateModal(true)}
+            onOpenCreatePersonalTask={() => {
+              setEditingPersonalTask(null);
+              setShowPersonalTaskModal(true);
+            }}
+            onRefreshRedmine={() => loadProjectData(selectedProjectId, filters, true)}
+            isRedmineLoading={isLoading}
+          />
+        )}
+
         {activeView === 'analytics' && (
           <DashboardAnalytics
             issues={filteredIssues}
@@ -675,6 +721,35 @@ export default function App() {
             setAIConfigRevision(value => value + 1);
             loadInitialData();
             loadProjectData(selectedProjectId, filters);
+          }}
+        />
+      )}
+
+      {showPersonalTaskModal && (
+        <PersonalTaskModal
+          task={editingPersonalTask}
+          existingWeeks={[]}
+          existingCategories={[]}
+          statuses={statuses}
+          priorities={priorities}
+          trackers={trackers}
+          customFields={customFields}
+          categories={categories}
+          versions={versions}
+          memberships={memberships}
+          projects={projects}
+          currentUser={currentUser}
+          onClose={() => {
+            setShowPersonalTaskModal(false);
+            setEditingPersonalTask(null);
+          }}
+          onSave={handleSavePersonalTask}
+          onDelete={(id) => {
+            const userScopeKey = getUserScopeKey(currentUser, config.apiKey);
+            const existing = getSavedTasks(userScopeKey);
+            saveTasks(existing.filter(t => t.id !== id), userScopeKey);
+            setShowPersonalTaskModal(false);
+            setEditingPersonalTask(null);
           }}
         />
       )}
