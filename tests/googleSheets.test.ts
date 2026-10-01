@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractGoogleSpreadsheetId } from '../lib/googleSheets.js';
-import { mergePersonalTasks } from '../src/services/googleSheetsSync.js';
+import { extractGoogleSpreadsheetId, validateAppsScriptUrl } from '../lib/googleSheets.js';
+import { mergePersonalTasks, APPS_SCRIPT_TEMPLATE } from '../src/services/googleSheetsSync.js';
 import type { PersonalTask } from '../src/types/personalTask.js';
 
 test('extractGoogleSpreadsheetId extracts spreadsheet ID and gid accurately', () => {
@@ -27,6 +27,29 @@ test('extractGoogleSpreadsheetId extracts spreadsheet ID and gid accurately', ()
   assert.equal(extractGoogleSpreadsheetId(''), null);
   assert.equal(extractGoogleSpreadsheetId('https://google.com'), null);
   assert.equal(extractGoogleSpreadsheetId('https://example.com/spreadsheets/d/123'), null);
+});
+
+test('validateAppsScriptUrl validates Google Apps Script web app URLs accurately', () => {
+  assert.equal(
+    validateAppsScriptUrl('https://script.google.com/macros/s/AKfycbw1234567890abcdefghijklmnopqrstuvwxyz/exec'),
+    true
+  );
+  assert.equal(
+    validateAppsScriptUrl('https://script.google.com/macros/s/AKfycb-test_123/exec?action=ping'),
+    true
+  );
+  assert.equal(validateAppsScriptUrl('https://script.google.com/macros/s/AKfycb/dev'), false);
+  assert.equal(validateAppsScriptUrl('https://evil.com/macros/s/123/exec'), false);
+  assert.equal(validateAppsScriptUrl(''), false);
+});
+
+test('APPS_SCRIPT_TEMPLATE contains essential handlers for two-way sync', () => {
+  assert.ok(APPS_SCRIPT_TEMPLATE.includes('function doGet(e)'));
+  assert.ok(APPS_SCRIPT_TEMPLATE.includes('function doPost(e)'));
+  assert.ok(APPS_SCRIPT_TEMPLATE.includes('action === "create"'));
+  assert.ok(APPS_SCRIPT_TEMPLATE.includes('action === "update"'));
+  assert.ok(APPS_SCRIPT_TEMPLATE.includes('action === "delete"'));
+  assert.ok(APPS_SCRIPT_TEMPLATE.includes('action === "syncAll"'));
 });
 
 test('mergePersonalTasks merges new tasks and updates existing tasks while preserving workflow status', () => {
