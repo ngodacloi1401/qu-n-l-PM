@@ -13,6 +13,7 @@ import {
   Layers,
   RotateCcw,
   Sparkles,
+  Link2,
 } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import type {
@@ -43,6 +44,13 @@ import { PersonalTaskKanban } from './PersonalTaskKanban';
 import { ExcelImportModal } from './ExcelImportModal';
 import { PersonalTaskModal } from './PersonalTaskModal';
 import { PersonalTaskAIModal } from './PersonalTaskAIModal';
+import { GoogleSheetsSyncModal } from './GoogleSheetsSyncModal';
+import {
+  getGoogleSheetsSyncConfig,
+  saveGoogleSheetsSyncConfig,
+  fetchGoogleSheetTasks,
+  mergePersonalTasks,
+} from '../../services/googleSheetsSync';
 
 interface PersonalTaskViewProps {
   currentUser?: RedmineUser | null;
@@ -116,6 +124,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   const [showImportModal, setShowImportModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAIModal, setShowAIModal] = useState(false);
+  const [showGoogleSheetsModal, setShowGoogleSheetsModal] = useState(false);
   const [editingTask, setEditingTask] = useState<PersonalTask | null>(null);
   const [importNotice, setImportNotice] = useState<string | null>(null);
 
@@ -176,6 +185,36 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
       setSelectedWeek('all');
     }
   }, [availableWeeks, selectedWeek]);
+
+    // Auto-sync from Google Sheets on mount/tab open if enabled
+  useEffect(() => {
+    const config = getGoogleSheetsSyncConfig(userScopeKey);
+    if (!config.autoSync || !config.sheetUrl) return;
+
+    let cancelled = false;
+    fetchGoogleSheetTasks(config.sheetUrl, config.selectedSheetName)
+      .then((res) => {
+        if (cancelled || !res.tasks.length) return;
+        setTasks((prev) => {
+          const next = config.syncMode === 'replace' ? res.tasks : mergePersonalTasks(prev, res.tasks);
+          return next;
+        });
+        saveGoogleSheetsSyncConfig(userScopeKey, {
+          ...config,
+          lastSyncedAt: Date.now(),
+          lastTaskCount: res.tasks.length,
+          selectedSheetName: res.sheetName,
+        });
+        setImportNotice(`Tự động đồng bộ ${res.tasks.length} công việc từ Google Sheets.`);
+      })
+      .catch((err) => {
+        console.warn('Auto-sync Google Sheets skipped:', err.message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userScopeKey]);
 
   // Task operations
   const handleUpdateTask = (updated: PersonalTask) => {
@@ -304,6 +343,17 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
           >
             <Sparkles className="w-4 h-4 text-purple-200" />
             <span>AI Lên kế hoạch</span>
+          </button>
+                    <button
+            onClick={() => setShowGoogleSheetsModal(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            title="Tự động đồng bộ từ Google Sheets"
+          >
+            <Link2 className="w-4 h-4 text-emerald-600" />
+            <span>Google Sheets</span>
+            {Boolean(getGoogleSheetsSyncConfig(userScopeKey).sheetUrl) && (
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Đang liên kết Google Sheets" />
+            )}
           </button>
           <button
             onClick={() => setShowImportModal(true)}
@@ -585,6 +635,18 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
       )}
 
       {/* Modals */}
+            {showGoogleSheetsModal && (
+        <GoogleSheetsSyncModal
+          userScopeKey={userScopeKey}
+          tasks={tasks}
+          onTasksUpdated={(updatedTasks, message) => {
+            setTasks(updatedTasks);
+            setImportNotice(message);
+          }}
+          onClose={() => setShowGoogleSheetsModal(false)}
+        />
+      )}
+
       {showImportModal && (
         <ExcelImportModal
           onClose={() => setShowImportModal(false)}

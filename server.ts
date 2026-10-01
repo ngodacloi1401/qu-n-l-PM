@@ -6,6 +6,7 @@ import { geminiErrorResponse } from './lib/geminiErrors.js';
 import { createChatRequest } from './lib/geminiChat.js';
 import { listGeminiTextModels } from './lib/geminiModels.js';
 import { registerProviderAIRoutes } from './lib/aiRoutes.js';
+import { registerGoogleSheetsRoutes } from './lib/googleSheets.js';
 import { registerAuthRoutes, requireAuth } from './lib/auth.js';
 import { geminiThinkingConfig, outputTokenLimit, parseReasoningEffort } from './lib/geminiReasoning.js';
 import dotenv from 'dotenv';
@@ -514,6 +515,7 @@ Hãy phân tích và đưa ra 3 lời khuyên tối ưu hóa luồng công việ
 });
 
 registerProviderAIRoutes(app);
+registerGoogleSheetsRoutes(app);
 
 // -------------------------------------------------------------
 // Vite Middleware / Static Serving
