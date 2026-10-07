@@ -14,7 +14,9 @@ import {
   FileSpreadsheet,
   CalendarRange,
 } from 'lucide-react';
-import { RedmineProject, RedmineUser, ViewMode } from '../types/redmine';
+import { RedmineProject, RedmineUser, RedmineIssue, ViewMode } from '../types/redmine';
+import type { PersonalTask } from '../types/personalTask';
+import { WeeklyNotificationDropdown } from './WeeklyNotificationDropdown';
 
 interface HeaderProps {
   currentUser: RedmineUser | null;
@@ -29,6 +31,10 @@ interface HeaderProps {
   onOpenSettings: () => void;
   onLock?: () => void;
   baseUrl: string;
+  personalTasks?: PersonalTask[];
+  redmineIssues?: RedmineIssue[];
+  onSelectIssue?: (issue: RedmineIssue) => void;
+  onSelectPersonalTask?: (task: PersonalTask) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -44,6 +50,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onLock,
   baseUrl,
+  personalTasks = [],
+  redmineIssues = [],
+  onSelectIssue,
+  onSelectPersonalTask,
 }) => {
   const selectedProject = projects.find((p) => String(p.id) === selectedProjectId);
 
@@ -93,6 +103,15 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Quick Actions & User Profile */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Weekly Notifications Dropdown */}
+            <WeeklyNotificationDropdown
+              personalTasks={personalTasks}
+              redmineIssues={redmineIssues}
+              currentUser={currentUser}
+              onSelectIssue={onSelectIssue}
+              onSelectPersonalTask={onSelectPersonalTask}
+            />
+
             {/* Create New Issue Button */}
             <button
               id="btn-create-issue"
@@ -115,8 +134,6 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-indigo-600' : ''}`} />
             </button>
-
-            {/* GitHub & Vercel Deploy info */}
 
             {/* Settings Modal Toggle */}
             <button

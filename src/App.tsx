@@ -533,6 +533,13 @@ export default function App() {
         onOpenSettings={() => setShowSettingsModal(true)}
         onLock={handleLogout}
         baseUrl={config.baseUrl}
+        personalTasks={getSavedTasks(getUserScopeKey(currentUser, config.apiKey))}
+        redmineIssues={issues}
+        onSelectIssue={(iss) => setSelectedIssueForModal(iss)}
+        onSelectPersonalTask={(pt) => {
+          setEditingPersonalTask(pt);
+          setShowPersonalTaskModal(true);
+        }}
       />
 
       {/* Main Content Area */}
