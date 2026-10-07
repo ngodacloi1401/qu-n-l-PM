@@ -2,6 +2,7 @@ import React from 'react';
 import { Clock, AlertCircle, Edit2, ArrowRight, ArrowLeft, ExternalLink } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import type { RedmineStatus } from '../../types/redmine';
+import { NotionStatusPicker } from './NotionStatusPicker';
 
 interface PersonalTaskKanbanProps {
   tasks: PersonalTask[];
@@ -214,55 +215,76 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                       )}
 
                       {/* Status pill & Footer */}
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px]">
-                        <div>
-                          {isOverdue ? (
-                            <span className="text-rose-700 font-bold flex items-center gap-1">
-                              <AlertCircle className="w-3 h-3" /> {task.dueDate}
-                            </span>
-                          ) : isToday ? (
-                            <span className="text-amber-700 font-bold flex items-center gap-1">
-                              <Clock className="w-3 h-3" /> Hôm nay
-                            </span>
-                          ) : task.dueDate ? (
-                            <span className="text-slate-400">{task.dueDate}</span>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
+                      <div className="flex items-center justify-between gap-1 pt-2 border-t border-slate-100 text-[11px]">
+                        <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
+                          <NotionStatusPicker
+                            value={task.statusName}
+                            onChange={(name) => {
+                              const matched = statuses.find((s) => s.name === name);
+                              const isTargetClosed = matched?.is_closed || ['closed', 'resolved', 'done', 'hoàn thành'].some(w => name.toLowerCase().includes(w));
+                              const isTargetNew = ['new', 'not started', 'mới'].some(w => name.toLowerCase().includes(w));
+                              onUpdateTask({
+                                ...task,
+                                statusId: matched?.id,
+                                statusName: name,
+                                doneRatio: isTargetClosed ? 100 : isTargetNew ? 0 : (task.doneRatio || 50),
+                                updatedAt: new Date().toISOString(),
+                              });
+                            }}
+                            statuses={statuses}
+                            compact
+                            disabled={readOnly}
+                          />
                         </div>
 
-                        <div className="flex items-center gap-1">
-                          {readOnly ? (
-                            <button onClick={() => openTask(task)} title="Mở issue trên Redmine" className="inline-flex items-center gap-1 px-1.5 py-1 hover:bg-red-50 rounded text-red-600 hover:text-red-800 cursor-pointer">
-                              <ExternalLink className="w-3.5 h-3.5" /><span className="text-[10px] font-semibold">Redmine</span>
-                            </button>
-                          ) : <>
-                          {col.id !== 'new' && (
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <div>
+                            {isOverdue ? (
+                              <span className="text-rose-700 font-bold flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3" /> {task.dueDate}
+                              </span>
+                            ) : isToday ? (
+                              <span className="text-amber-700 font-bold flex items-center gap-1">
+                                <Clock className="w-3 h-3" /> Hôm nay
+                              </span>
+                            ) : task.dueDate ? (
+                              <span className="text-slate-400">{task.dueDate}</span>
+                            ) : null}
+                          </div>
+
+                          <div className="flex items-center gap-0.5">
+                            {readOnly ? (
+                              <button onClick={() => openTask(task)} title="Mở issue trên Redmine" className="inline-flex items-center gap-1 px-1.5 py-1 hover:bg-red-50 rounded text-red-600 hover:text-red-800 cursor-pointer">
+                                <ExternalLink className="w-3.5 h-3.5" /><span className="text-[10px] font-semibold">Redmine</span>
+                              </button>
+                            ) : <>
+                            {col.id !== 'new' && (
+                              <button
+                                onClick={() => moveStatus(task, 'prev')}
+                                title="Chuyển về trạng thái trước"
+                                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                              >
+                                <ArrowLeft className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
-                              onClick={() => moveStatus(task, 'prev')}
-                              title="Chuyển về trạng thái trước"
-                              className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                              onClick={() => onEditTask(task)}
+                              title="Chỉnh sửa thuộc tính"
+                              className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 cursor-pointer"
                             >
-                              <ArrowLeft className="w-3.5 h-3.5" />
+                              <Edit2 className="w-3.5 h-3.5" />
                             </button>
-                          )}
-                          <button
-                            onClick={() => onEditTask(task)}
-                            title="Chỉnh sửa thuộc tính"
-                            className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 cursor-pointer"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          {col.id !== 'closed' && (
-                            <button
-                              onClick={() => moveStatus(task, 'next')}
-                              title="Chuyển sang trạng thái tiếp theo"
-                              className="p-1 hover:bg-indigo-50 rounded text-indigo-600 hover:text-indigo-800 cursor-pointer"
-                            >
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          </>}
+                            {col.id !== 'closed' && (
+                              <button
+                                onClick={() => moveStatus(task, 'next')}
+                                title="Chuyển sang trạng thái tiếp theo"
+                                className="p-1 hover:bg-indigo-50 rounded text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                              >
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            </>}
+                          </div>
                         </div>
                       </div>
                     </div>

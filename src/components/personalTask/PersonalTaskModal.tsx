@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Check, Calendar, Clock, AlertCircle, FileText, CheckCircle2, Flame, Folder } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import type { RedmineStatus, RedminePriority } from '../../types/redmine';
+import { NotionStatusPicker } from './NotionStatusPicker';
 
 interface PersonalTaskModalProps {
   task: PersonalTask | null;
@@ -211,17 +212,11 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Trạng thái:
               </label>
-              <select
+              <NotionStatusPicker
                 value={statusName}
-                onChange={(e) => setStatusName(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl font-semibold text-slate-800 bg-white"
-              >
-                {statusOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                onChange={(name) => setStatusName(name)}
+                statuses={statuses}
+              />
             </div>
 
             <div>

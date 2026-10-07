@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import type { RedmineStatus, RedminePriority } from '../../types/redmine';
+import { NotionStatusPicker } from './NotionStatusPicker';
 
 interface PersonalTaskTableProps {
   tasks: PersonalTask[];
@@ -61,17 +62,6 @@ export const PersonalTaskTable: React.FC<PersonalTaskTableProps> = ({
     });
   };
 
-  const handleStatusChange = (task: PersonalTask, newStatusName: string, e: React.ChangeEvent<HTMLSelectElement>) => {
-    e.stopPropagation();
-    const matched = statuses.find((s) => s.name === newStatusName);
-    onUpdateTask({
-      ...task,
-      statusId: matched?.id,
-      statusName: newStatusName,
-      doneRatio: matched?.is_closed ? 100 : task.doneRatio,
-      updatedAt: new Date().toISOString(),
-    });
-  };
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -278,27 +268,23 @@ export const PersonalTaskTable: React.FC<PersonalTaskTableProps> = ({
                       {task.estimatedHours ? `${task.estimatedHours}h` : '-'}
                     </td>
 
-                    {/* Status Redmine (Dropdown Inline) */}
+                    {/* Status Notion-style Picker (Inline) */}
                     <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                      <select
+                      <NotionStatusPicker
                         value={task.statusName}
-                        onChange={(e) => handleStatusChange(task, e.target.value, e)}
-                        className={`text-xs font-bold py-1 px-2 rounded-lg border focus:outline-none cursor-pointer transition-colors max-w-[140px] truncate ${
-                          isClosed
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                            : task.statusName.toLowerCase().includes('in progress')
-                            ? 'bg-amber-100 text-amber-900 border-amber-300'
-                            : task.statusName.toLowerCase().includes('qa') || task.statusName.toLowerCase().includes('feedback')
-                            ? 'bg-blue-50 text-blue-800 border-blue-300'
-                            : 'bg-slate-50 text-slate-700 border-slate-300'
-                        }`}
-                      >
-                        {statuses.map((s) => (
-                          <option key={s.id} value={s.name}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(name) => {
+                          const matched = statuses.find((s) => s.name === name);
+                          onUpdateTask({
+                            ...task,
+                            statusId: matched?.id,
+                            statusName: name,
+                            doneRatio: matched?.is_closed ? 100 : task.doneRatio,
+                            updatedAt: new Date().toISOString(),
+                          });
+                        }}
+                        statuses={statuses}
+                        compact
+                      />
                     </td>
 
                     {/* Kết quả / Tiến độ */}
