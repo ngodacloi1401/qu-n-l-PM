@@ -221,6 +221,32 @@ test('computeWeeklyNotifications strictly excludes tasks from past weeks/years a
   assert.equal(summary.dueTomorrow[0].dayLabel, 'Ngày mai');
   assert.equal(summary.dueTomorrow[0].dueTimeFormatted, '09:00');
 
-  // Total action required is strictly small (e.g. 2 instead of 50!)
-  assert.equal(summary.totalActionRequired, summary.overdue.length + summary.dueSoon.length);
+  // Total action required is strictly small and deduplicated
+  assert.equal(summary.totalActionRequired, 3);
+});
+
+test('computeWeeklyNotifications does not double-count tasks that are both due today and overdue', () => {
+  const refNow = new Date('2026-10-07T12:22:00'); // Wednesday 12:22
+
+  const personalTasks: PersonalTask[] = [
+    {
+      id: 'pt-overdue-today',
+      title: 'Task due today at 11:54 (28 mins overdue)',
+      dueDate: '2026-10-07 11:54',
+      statusName: 'New',
+    } as PersonalTask,
+  ];
+
+  const summary = computeWeeklyNotifications({
+    personalTasks,
+    now: refNow,
+  });
+
+  // Task is both overdue and due today
+  assert.equal(summary.overdue.length, 1);
+  assert.equal(summary.dueToday.length, 1);
+  assert.equal(summary.thisWeek.length, 1);
+
+  // BUT totalActionRequired must be 1, NOT 2!
+  assert.equal(summary.totalActionRequired, 1);
 });

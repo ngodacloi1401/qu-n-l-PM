@@ -97,7 +97,21 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
   };
 
   const todayAndOverdueItems = useMemo(() => {
-    return [...summary.overdue, ...summary.dueToday];
+    const seen = new Set<string>();
+    const list: WeeklyNotificationItem[] = [];
+    for (const item of summary.overdue) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        list.push(item);
+      }
+    }
+    for (const item of summary.dueToday) {
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        list.push(item);
+      }
+    }
+    return list;
   }, [summary.overdue, summary.dueToday]);
 
   const displayItems = useMemo(() => {

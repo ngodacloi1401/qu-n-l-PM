@@ -346,13 +346,18 @@ export function computeWeeklyNotifications({
 
   const currentWeekLabel = `Tuần ${weekNumber} (${startStr.slice(5).replace('-', '/')} - ${endStr.slice(5).replace('-', '/')})`;
 
+  // Count unique items requiring attention (overdue or due soon) without double-counting
+  const actionRequiredSet = new Set<string>();
+  overdue.forEach((i) => actionRequiredSet.add(i.id));
+  dueSoon.forEach((i) => actionRequiredSet.add(i.id));
+
   return {
     overdue,
     dueToday,
     dueTomorrow,
     dueSoon,
     thisWeek: allItems,
-    totalActionRequired: overdue.length + dueSoon.length,
+    totalActionRequired: actionRequiredSet.size,
     currentWeekLabel,
     weekStartStr: startStr,
     weekEndStr: endStr,
