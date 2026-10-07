@@ -1,4 +1,10 @@
 import type { Express, Request, Response } from 'express';
+import {
+  getServiceAccountStatus,
+  readTasksFromServiceAccount,
+  pushTasksToServiceAccount,
+  pushSingleTaskToServiceAccount,
+} from './googleServiceAccount.js';
 
 export function extractGoogleSpreadsheetId(url: string): { spreadsheetId: string; gid?: string } | null {
   if (!url || typeof url !== 'string') return null;
@@ -165,6 +171,91 @@ export function registerGoogleSheetsRoutes(app: Express) {
       return res.status(500).json({
         error: `Lỗi kết nối tới Google Apps Script: ${err?.message || 'Không thể gửi dữ liệu tới máy chủ Google.'}`,
       });
+    }
+  });
+
+  // 3. Service Account Endpoints (Zero-Script UX)
+  app.get('/api/google-sheets/service-account/status', (_req: Request, res: Response) => {
+    try {
+      const status = getServiceAccountStatus();
+      return res.json(status);
+    } catch (err: any) {
+      return res.status(500).json({ configured: false, error: err?.message || 'Lỗi kiểm tra Service Account.' });
+    }
+  });
+
+  app.post('/api/google-sheets/service-account/test', async (req: Request, res: Response) => {
+    const url = req.body?.url;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'Vui lòng cung cấp đường link Google Sheets.' });
+    }
+
+    try {
+      const result = await readTasksFromServiceAccount(url);
+      return res.json({
+        success: true,
+        sheetTitle: result.sheetTitle,
+        count: result.tasks.length,
+        message: `Kết nối thành công tới Sheet "${result.sheetTitle}". Tìm thấy ${result.tasks.length} công việc.`,
+      });
+    } catch (err: any) {
+      console.error('[GoogleServiceAccount Test Error]:', err);
+      return res.status(400).json({ error: err?.message || 'Không thể kết nối tới Google Sheet.' });
+    }
+  });
+
+  app.post('/api/google-sheets/service-account/pull', async (req: Request, res: Response) => {
+    const url = req.body?.url;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'Vui lòng cung cấp đường link Google Sheets.' });
+    }
+
+    try {
+      const result = await readTasksFromServiceAccount(url);
+      return res.json({
+        success: true,
+        sheetTitle: result.sheetTitle,
+        tasks: result.tasks,
+      });
+    } catch (err: any) {
+      console.error('[GoogleServiceAccount Pull Error]:', err);
+      return res.status(400).json({ error: err?.message || 'Không thể tải công việc từ Google Sheet.' });
+    }
+  });
+
+  app.post('/api/google-sheets/service-account/push-task', async (req: Request, res: Response) => {
+    const { url, task, action } = req.body || {};
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'Vui lòng cung cấp đường link Google Sheets.' });
+    }
+    if (!task || !task.title) {
+      return res.status(400).json({ error: 'Dữ liệu công việc không hợp lệ (thiếu tiêu đề).' });
+    }
+
+    try {
+      const result = await pushSingleTaskToServiceAccount(url, task, action || 'update');
+      return res.json(result);
+    } catch (err: any) {
+      console.error('[GoogleServiceAccount PushTask Error]:', err);
+      return res.status(400).json({ error: err?.message || 'Lỗi khi cập nhật công việc lên Google Sheet.' });
+    }
+  });
+
+  app.post('/api/google-sheets/service-account/push-all', async (req: Request, res: Response) => {
+    const { url, tasks, mode } = req.body || {};
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'Vui lòng cung cấp đường link Google Sheets.' });
+    }
+    if (!Array.isArray(tasks)) {
+      return res.status(400).json({ error: 'Danh sách công việc không hợp lệ.' });
+    }
+
+    try {
+      const result = await pushTasksToServiceAccount(url, tasks, mode || 'replace_all');
+      return res.json(result);
+    } catch (err: any) {
+      console.error('[GoogleServiceAccount PushAll Error]:', err);
+      return res.status(400).json({ error: err?.message || 'Lỗi khi đẩy toàn bộ công việc lên Google Sheet.' });
     }
   });
 }

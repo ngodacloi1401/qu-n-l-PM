@@ -52,6 +52,8 @@ import {
   mergePersonalTasks,
   pushTaskToGoogleSheet,
   pullTasksFromAppsScript,
+  pushTaskToServiceAccount,
+  pullTasksFromServiceAccount,
 } from '../../services/googleSheetsSync';
 
 interface PersonalTaskViewProps {
@@ -195,7 +197,20 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
 
     let cancelled = false;
 
-    if (config.scriptUrl) {
+    if (config.syncMethod === 'service-account' && config.sheetUrl) {
+      pullTasksFromServiceAccount(config.sheetUrl)
+        .then((incoming) => {
+          if (cancelled || !incoming.length) return;
+          setTasks((prev) => {
+            const next = config.syncMode === 'replace' ? incoming : mergePersonalTasks(prev, incoming);
+            return next;
+          });
+          setImportNotice(`Đã tự động đồng bộ ${incoming.length} công việc từ Google Sheets (Service Account).`);
+        })
+        .catch((err) => {
+          console.warn('Auto-sync from Service Account skipped:', err.message);
+        });
+    } else if (config.syncMethod === 'apps-script' && config.scriptUrl) {
       pullTasksFromAppsScript(config.scriptUrl)
         .then((incoming) => {
           if (cancelled || !incoming.length) return;
@@ -234,15 +249,22 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
     };
   }, [userScopeKey]);
 
+  // Helper to trigger 2-way push to Google Sheet based on active configuration
+  const autoPushToSheet = (task: PersonalTask, action: 'create' | 'update' | 'delete') => {
+    const cfg = getGoogleSheetsSyncConfig(userScopeKey);
+    if (cfg.autoPush === false) return;
+
+    if (cfg.syncMethod === 'service-account' && cfg.sheetUrl) {
+      pushTaskToServiceAccount(cfg.sheetUrl, task, action).catch(() => {});
+    } else if (cfg.scriptUrl) {
+      pushTaskToGoogleSheet(cfg.scriptUrl, task, action).catch(() => {});
+    }
+  };
+
   // Task operations — with auto-push to Google Sheet (2-way sync)
   const handleUpdateTask = (updated: PersonalTask) => {
     setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-
-    // Auto-push status/field change to Google Sheet (async, non-blocking)
-    const cfg = getGoogleSheetsSyncConfig(userScopeKey);
-    if (cfg.scriptUrl && cfg.autoPush !== false) {
-      pushTaskToGoogleSheet(cfg.scriptUrl, updated, 'update').catch(() => {});
-    }
+    autoPushToSheet(updated, 'update');
   };
 
   const handleSaveModalTask = (task: PersonalTask) => {
@@ -258,23 +280,15 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
       return [task, ...prev];
     });
 
-    // Auto-push create/update to Google Sheet (async, non-blocking)
-    const cfg = getGoogleSheetsSyncConfig(userScopeKey);
-    if (cfg.scriptUrl && cfg.autoPush !== false) {
-      pushTaskToGoogleSheet(cfg.scriptUrl, task, isNew ? 'create' : 'update').catch(() => {});
-    }
+    autoPushToSheet(task, isNew ? 'create' : 'update');
   };
 
   const handleDeleteTask = (id: string) => {
     const deletedTask = tasks.find((t) => t.id === id);
     setTasks((prev) => prev.filter((t) => t.id !== id));
 
-    // Auto-push delete to Google Sheet (async, non-blocking)
     if (deletedTask) {
-      const cfg = getGoogleSheetsSyncConfig(userScopeKey);
-      if (cfg.scriptUrl && cfg.autoPush !== false) {
-        pushTaskToGoogleSheet(cfg.scriptUrl, deletedTask, 'delete').catch(() => {});
-      }
+      autoPushToSheet(deletedTask, 'delete');
     }
   };
 

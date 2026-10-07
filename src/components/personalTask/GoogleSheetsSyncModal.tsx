@@ -4,21 +4,20 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertCircle,
-  ExternalLink,
   Download,
   Trash2,
   X,
   Link2,
-  HelpCircle,
-  Clock,
   Sparkles,
   Copy,
   Check,
-  ArrowRight,
   UploadCloud,
   DownloadCloud,
   CheckCheck,
   ShieldCheck,
+  Mail,
+  Zap,
+  Info,
 } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import {
@@ -30,8 +29,13 @@ import {
   testAppsScriptConnection,
   pushAllTasksToGoogleSheet,
   pullTasksFromAppsScript,
+  fetchServiceAccountStatus,
+  testServiceAccountConnection,
+  pullTasksFromServiceAccount,
+  pushAllTasksToServiceAccount,
   APPS_SCRIPT_TEMPLATE,
   type GoogleSheetsSyncConfig,
+  type ServiceAccountStatus,
 } from '../../services/googleSheetsSync';
 import { downloadExcelTemplate } from '../../services/personalTaskExcel';
 
@@ -52,18 +56,29 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     getGoogleSheetsSyncConfig(userScopeKey)
   );
 
-  const [activeTab, setActiveTab] = useState<'2way' | '1way'>(
-    config.scriptUrl ? '2way' : '2way'
-  );
+  const [activeTab, setActiveTab] = useState<'service-account' | 'apps-script' | '1way'>(() => {
+    if (config.syncMethod === 'apps-script' || (!config.syncMethod && config.scriptUrl)) {
+      return 'apps-script';
+    }
+    return 'service-account';
+  });
 
-  // 2-way state
+  // Service Account State
+  const [saStatus, setSaStatus] = useState<ServiceAccountStatus | null>(null);
+  const [saLoading, setSaLoading] = useState(false);
+  const [copiedSaEmail, setCopiedSaEmail] = useState(false);
+  const [saSheetUrl, setSaSheetUrl] = useState(config.sheetUrl || '');
+  const [saAutoPush, setSaAutoPush] = useState(config.autoPush !== false);
+  const [saConnectionStatus, setSaConnectionStatus] = useState<string | null>(null);
+
+  // Apps Script (2-way manual) State
   const [scriptUrlInput, setScriptUrlInput] = useState(config.scriptUrl || '');
-  const [autoPush, setAutoPush] = useState(config.autoPush !== false);
+  const [scriptAutoPush, setScriptAutoPush] = useState(config.autoPush !== false);
   const [copiedScript, setCopiedScript] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<string | null>(null);
+  const [scriptConnectionStatus, setScriptConnectionStatus] = useState<string | null>(null);
 
-  // 1-way state
+  // 1-way Read-Only State
   const [urlInput, setUrlInput] = useState(config.sheetUrl || '');
   const [syncMode, setSyncMode] = useState<'merge' | 'replace'>(config.syncMode || 'merge');
   const [autoSync, setAutoSync] = useState(config.autoSync || false);
@@ -72,13 +87,47 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // Load server status on mount
   useEffect(() => {
+    let isMounted = true;
+    setSaLoading(true);
+    fetchServiceAccountStatus()
+      .then((status) => {
+        if (isMounted) {
+          setSaStatus(status);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setSaLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setSaSheetUrl(config.sheetUrl || '');
     setScriptUrlInput(config.scriptUrl || '');
-    setAutoPush(config.autoPush !== false);
+    setScriptAutoPush(config.autoPush !== false);
+    setSaAutoPush(config.autoPush !== false);
     setUrlInput(config.sheetUrl || '');
     setSyncMode(config.syncMode || 'merge');
     setAutoSync(config.autoSync || false);
   }, [config]);
+
+  const handleCopySaEmail = async () => {
+    const email = saStatus?.clientEmail || '';
+    if (!email) return;
+    try {
+      await navigator.clipboard.writeText(email);
+      setCopiedSaEmail(true);
+      setTimeout(() => setCopiedSaEmail(false), 3000);
+    } catch {
+      setErrorMsg('Không thể tự động sao chép email. Vui lòng copy thủ công.');
+    }
+  };
 
   const handleCopyScript = async () => {
     try {
@@ -90,7 +139,118 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     }
   };
 
-  const handleTest2Way = async () => {
+  // --- SERVICE ACCOUNT ACTIONS ---
+  const handleTestServiceAccount = async () => {
+    const url = saSheetUrl.trim();
+    if (!url) {
+      setErrorMsg('Vui lòng nhập đường link Google Sheets trước khi kiểm tra.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+    setSaConnectionStatus(null);
+
+    try {
+      const res = await testServiceAccountConnection(url);
+      setSaConnectionStatus(`Kết nối thành công! Sheet "${res.sheetTitle || 'Sheet1'}" hiện có ${res.count ?? 0} công việc.`);
+      setSuccessMsg('Đã kết nối thành công tới file Google Sheet của bạn!');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Không thể kết nối tới Google Sheet.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveServiceAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    const url = saSheetUrl.trim();
+    if (!url) {
+      setErrorMsg('Vui lòng nhập đường link Google Sheets.');
+      return;
+    }
+
+    const updatedConfig: GoogleSheetsSyncConfig = {
+      ...config,
+      sheetUrl: url,
+      syncMethod: 'service-account',
+      autoPush: saAutoPush,
+      autoSync: true,
+    };
+
+    saveGoogleSheetsSyncConfig(userScopeKey, updatedConfig);
+    setConfig(updatedConfig);
+    setSuccessMsg('Đã kích hoạt đồng bộ 2 chiều tự động qua Google Service Account!');
+    setTimeout(() => onClose(), 1200);
+  };
+
+  const handlePushAllViaServiceAccount = async () => {
+    const url = saSheetUrl.trim() || config.sheetUrl;
+    if (!url) {
+      setErrorMsg('Vui lòng nhập link Google Sheet trước.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    try {
+      const res = await pushAllTasksToServiceAccount(url, tasks);
+      const msg = `Đã đẩy toàn bộ ${res.count} công việc lên Google Sheet thành công!`;
+      setSuccessMsg(msg);
+      saveGoogleSheetsSyncConfig(userScopeKey, {
+        ...config,
+        sheetUrl: url,
+        syncMethod: 'service-account',
+        autoPush: saAutoPush,
+        lastSyncedAt: Date.now(),
+        lastTaskCount: res.count,
+      });
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Lỗi khi đẩy dữ liệu lên Google Sheet.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePullViaServiceAccount = async () => {
+    const url = saSheetUrl.trim() || config.sheetUrl;
+    if (!url) {
+      setErrorMsg('Vui lòng nhập link Google Sheet trước.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    try {
+      const incoming = await pullTasksFromServiceAccount(url);
+      if (!incoming.length) {
+        throw new Error('Google Sheet chưa có dòng công việc nào (hoặc chỉ có tiêu đề).');
+      }
+
+      const merged = mergePersonalTasks(tasks, incoming);
+      onTasksUpdated(merged, `Đã kéo ${incoming.length} công việc từ Google Sheet về máy.`);
+      setSuccessMsg(`Đã kéo thành công ${incoming.length} công việc từ Google Sheet.`);
+      saveGoogleSheetsSyncConfig(userScopeKey, {
+        ...config,
+        sheetUrl: url,
+        syncMethod: 'service-account',
+        autoPush: saAutoPush,
+        lastSyncedAt: Date.now(),
+        lastTaskCount: incoming.length,
+      });
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Lỗi khi kéo công việc từ Google Sheet.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- APPS SCRIPT ACTIONS ---
+  const handleTestAppsScript = async () => {
     const url = scriptUrlInput.trim();
     if (!url) {
       setErrorMsg('Vui lòng dán URL Ứng dụng web Google Apps Script trước khi kiểm tra.');
@@ -99,11 +259,11 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
 
     setTestingConnection(true);
     setErrorMsg(null);
-    setConnectionStatus(null);
+    setScriptConnectionStatus(null);
 
     try {
       const res = await testAppsScriptConnection(url);
-      setConnectionStatus(`Kết nối thành công! Đang liên kết với sheet "${res.sheetName || 'Active'}".`);
+      setScriptConnectionStatus(`Kết nối thành công! Đang liên kết với sheet "${res.sheetName || 'Active'}".`);
       setSuccessMsg('Đã xác thực Google Apps Script hoạt động chính xác.');
     } catch (err: any) {
       setErrorMsg(err.message || 'Lỗi khi kết nối với Google Apps Script.');
@@ -112,7 +272,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     }
   };
 
-  const handleSave2Way = (e: React.FormEvent) => {
+  const handleSaveAppsScript = (e: React.FormEvent) => {
     e.preventDefault();
     const url = scriptUrlInput.trim();
     if (!url) {
@@ -123,16 +283,17 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     const updatedConfig: GoogleSheetsSyncConfig = {
       ...config,
       scriptUrl: url,
-      autoPush,
+      syncMethod: 'apps-script',
+      autoPush: scriptAutoPush,
     };
 
     saveGoogleSheetsSyncConfig(userScopeKey, updatedConfig);
     setConfig(updatedConfig);
-    setSuccessMsg('Đã kích hoạt chế độ đồng bộ 2 chiều thành công!');
+    setSuccessMsg('Đã kích hoạt chế độ đồng bộ 2 chiều qua Apps Script!');
     setTimeout(() => onClose(), 1200);
   };
 
-  const handlePushAllToSheet = async () => {
+  const handlePushAllToAppsScript = async () => {
     const url = scriptUrlInput.trim() || config.scriptUrl;
     if (!url) {
       setErrorMsg('Vui lòng nhập URL Google Apps Script trước.');
@@ -150,7 +311,8 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
       saveGoogleSheetsSyncConfig(userScopeKey, {
         ...config,
         scriptUrl: url,
-        autoPush,
+        syncMethod: 'apps-script',
+        autoPush: scriptAutoPush,
         lastSyncedAt: Date.now(),
         lastTaskCount: res.count,
       });
@@ -184,7 +346,8 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
       saveGoogleSheetsSyncConfig(userScopeKey, {
         ...config,
         scriptUrl: url,
-        autoPush,
+        syncMethod: 'apps-script',
+        autoPush: scriptAutoPush,
         lastSyncedAt: Date.now(),
         lastTaskCount: incoming.length,
       });
@@ -195,6 +358,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     }
   };
 
+  // --- 1-WAY ACTIONS ---
   const handleSync1Way = async (e: React.FormEvent) => {
     e.preventDefault();
     const targetUrl = urlInput.trim();
@@ -252,14 +416,17 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
     const emptyConfig: GoogleSheetsSyncConfig = {
       sheetUrl: '',
       scriptUrl: '',
+      syncMethod: 'service-account',
       autoSync: false,
       autoPush: true,
       syncMode: 'merge',
     };
     setConfig(emptyConfig);
+    setSaSheetUrl('');
     setUrlInput('');
     setScriptUrlInput('');
-    setConnectionStatus(null);
+    setSaConnectionStatus(null);
+    setScriptConnectionStatus(null);
     setSuccessMsg('Đã hủy liên kết Google Sheet.');
     setErrorMsg(null);
   };
@@ -289,32 +456,47 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-2 pt-3 pb-2 border-b border-slate-100 flex-shrink-0">
+        <div className="flex items-center gap-1.5 pt-3 pb-2 border-b border-slate-100 flex-shrink-0 overflow-x-auto">
           <button
             type="button"
             onClick={() => {
-              setActiveTab('2way');
+              setActiveTab('service-account');
               setErrorMsg(null);
               setSuccessMsg(null);
             }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
-              activeTab === '2way'
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer flex-shrink-0 ${
+              activeTab === 'service-account'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-300" />
+            <span>Chỉ cần Link (Tự động 2 chiều)</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-400/30 text-amber-100 font-normal">Mới</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('apps-script');
+              setErrorMsg(null);
+              setSuccessMsg(null);
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer flex-shrink-0 ${
+              activeTab === 'apps-script'
                 ? 'bg-emerald-600 text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Đồng bộ 2 chiều (Apps Script)</span>
-            {config.scriptUrl && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
-            )}
+            <span>Thủ công (Apps Script)</span>
           </button>
 
           <button
@@ -324,14 +506,14 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
               setErrorMsg(null);
               setSuccessMsg(null);
             }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer flex-shrink-0 ${
               activeTab === '1way'
                 ? 'bg-emerald-600 text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             <DownloadCloud className="w-3.5 h-3.5" />
-            <span>Chỉ kéo về (1 chiều qua Link)</span>
+            <span>Chỉ kéo về (1 chiều)</span>
           </button>
         </div>
 
@@ -352,8 +534,177 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
             </div>
           )}
 
-          {/* TAB 1: TWO-WAY APPS SCRIPT */}
-          {activeTab === '2way' && (
+          {/* TAB 1: SERVICE ACCOUNT (ZERO-SCRIPT UX) */}
+          {activeTab === 'service-account' && (
+            <div className="space-y-4">
+              {/* Server Status & Email Card */}
+              {saStatus?.configured ? (
+                <div className="p-3.5 bg-emerald-50/60 border border-emerald-200 rounded-xl text-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-900 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-emerald-600" />
+                      Bước 1: Chia sẻ file Google Sheet cho Email Robot hệ thống
+                    </span>
+                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                      Sẵn sàng 2 chiều
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Mở file Google Sheet &gt; Nhấn nút <strong>Chia sẻ (Share)</strong> góc trên bên phải &gt; Thêm email bên dưới với quyền <strong>Người chỉnh sửa (Editor)</strong>:
+                  </p>
+
+                  <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-emerald-300">
+                    <Mail className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span className="font-mono text-xs text-slate-800 select-all flex-1 truncate">
+                      {saStatus.clientEmail}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopySaEmail}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold rounded text-xs transition-colors cursor-pointer flex-shrink-0"
+                    >
+                      {copiedSaEmail ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedSaEmail ? 'Đã chép!' : 'Sao chép email'}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs space-y-2">
+                  <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                    <Info className="w-4 h-4 text-amber-600" />
+                    Máy chủ đang chờ cấu hình Google Service Account
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    Để kích hoạt tính năng tự động chỉ bằng đường link, vui lòng đặt file credentials <strong><code>google-service-account.json</code></strong> vào thư mục dự án hoặc cấu hình biến môi trường <strong><code>GOOGLE_SERVICE_ACCOUNT_EMAIL</code></strong> và <strong><code>GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY</code></strong> trong file <code>.env</code>.
+                  </p>
+                  <p className="text-[11px] text-slate-600">
+                    Trong khi chờ cấu hình, bạn có thể bấm sang tab <strong>Thủ công (Apps Script)</strong> hoặc <strong>Chỉ kéo về (1 chiều)</strong> để sử dụng ngay!
+                  </p>
+                </div>
+              )}
+
+              {/* Step 2 Form */}
+              <form onSubmit={handleSaveServiceAccount} className="space-y-3.5">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Link2 className="w-3.5 h-3.5 text-emerald-600" />
+                      Bước 2: Dán đường link Google Sheets của bạn
+                    </span>
+                    {config.syncMethod === 'service-account' && config.sheetUrl && (
+                      <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        Đang kích hoạt tự động 2 chiều
+                      </span>
+                    )}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      required
+                      value={saSheetUrl}
+                      onChange={(e) => setSaSheetUrl(e.target.value)}
+                      placeholder="https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5.../edit"
+                      className="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:bg-white transition-all font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleTestServiceAccount}
+                      disabled={isLoading || !saSheetUrl.trim()}
+                      className="px-3 py-2 border border-slate-300 hover:bg-slate-100 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1 disabled:opacity-50 cursor-pointer flex-shrink-0"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                      <span>{isLoading ? 'Đang thử…' : 'Kiểm tra'}</span>
+                    </button>
+                  </div>
+                  {saConnectionStatus && (
+                    <div className="mt-1 text-[11px] font-medium text-emerald-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {saConnectionStatus}
+                    </div>
+                  )}
+                </div>
+
+                {/* Auto Push Checkbox */}
+                <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-200">
+                  <label className="flex items-center justify-between cursor-pointer select-none">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={saAutoPush}
+                        onChange={(e) => setSaAutoPush(e.target.checked)}
+                        className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
+                      />
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">
+                          Tự động ghi lên Google Sheet tức thì (Realtime Push)
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          Tạo việc mới, đổi trạng thái hoặc kéo thả Kanban trên App sẽ tự động cập nhật dòng tương ứng trên Sheet ngay lập tức.
+                        </div>
+                      </div>
+                    </div>
+                    <CheckCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  </label>
+                </div>
+
+                {/* Quick 2-way Operations */}
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
+                  <div className="text-xs font-bold text-slate-700">Thao tác đồng bộ tức thời:</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePushAllViaServiceAccount}
+                      disabled={isLoading || !saSheetUrl.trim()}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      <UploadCloud className="w-4 h-4 text-indigo-600" />
+                      <span>Đẩy tất cả {tasks.length} việc lên Sheet</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handlePullViaServiceAccount}
+                      disabled={isLoading || !saSheetUrl.trim()}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      <DownloadCloud className="w-4 h-4 text-emerald-600" />
+                      <span>Kéo công việc từ Sheet về máy</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submit button */}
+                <div className="flex items-center justify-between pt-2">
+                  {config.sheetUrl && config.syncMethod === 'service-account' ? (
+                    <button
+                      type="button"
+                      onClick={handleUnlink}
+                      className="inline-flex items-center gap-1 text-xs text-rose-600 hover:underline cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hủy liên kết 2 chiều</span>
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={!saSheetUrl.trim()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Lưu &amp; Kích hoạt 2 chiều</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 2: APPS SCRIPT (MANUAL 2-WAY) */}
+          {activeTab === 'apps-script' && (
             <div className="space-y-4">
               {/* Setup Guide Banner */}
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
@@ -393,17 +744,17 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
               </div>
 
               {/* Web App URL Input Form */}
-              <form onSubmit={handleSave2Way} className="space-y-3.5">
+              <form onSubmit={handleSaveAppsScript} className="space-y-3.5">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <Link2 className="w-3.5 h-3.5 text-emerald-600" />
                       URL Ứng dụng web Google Apps Script (/exec)
                     </span>
-                    {config.scriptUrl && (
+                    {config.syncMethod === 'apps-script' && config.scriptUrl && (
                       <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
                         <CheckCheck className="w-3.5 h-3.5" />
-                        Đang kích hoạt 2 chiều
+                        Đang kích hoạt Apps Script 2 chiều
                       </span>
                     )}
                   </label>
@@ -418,7 +769,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                     />
                     <button
                       type="button"
-                      onClick={handleTest2Way}
+                      onClick={handleTestAppsScript}
                       disabled={testingConnection || !scriptUrlInput.trim()}
                       className="px-3 py-2 border border-slate-300 hover:bg-slate-100 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1 disabled:opacity-50 cursor-pointer flex-shrink-0"
                     >
@@ -426,10 +777,10 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                       <span>{testingConnection ? 'Đang thử…' : 'Kiểm tra'}</span>
                     </button>
                   </div>
-                  {connectionStatus && (
+                  {scriptConnectionStatus && (
                     <div className="mt-1 text-[11px] font-medium text-emerald-600 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      {connectionStatus}
+                      {scriptConnectionStatus}
                     </div>
                   )}
                 </div>
@@ -440,8 +791,8 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                     <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        checked={autoPush}
-                        onChange={(e) => setAutoPush(e.target.checked)}
+                        checked={scriptAutoPush}
+                        onChange={(e) => setScriptAutoPush(e.target.checked)}
                         className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
                       />
                       <div>
@@ -463,7 +814,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={handlePushAllToSheet}
+                      onClick={handlePushAllToAppsScript}
                       disabled={isLoading || !scriptUrlInput.trim()}
                       className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
                     >
@@ -485,7 +836,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
 
                 {/* Save button */}
                 <div className="flex items-center justify-between pt-2">
-                  {config.scriptUrl ? (
+                  {config.scriptUrl && config.syncMethod === 'apps-script' ? (
                     <button
                       type="button"
                       onClick={handleUnlink}
@@ -511,7 +862,7 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: ONE-WAY READ VIA PUBLIC LINK */}
+          {/* TAB 3: ONE-WAY READ VIA PUBLIC LINK */}
           {activeTab === '1way' && (
             <form onSubmit={handleSync1Way} className="space-y-4">
               <div>
@@ -549,86 +900,133 @@ export const GoogleSheetsSyncModal: React.FC<GoogleSheetsSyncModalProps> = ({
                 </div>
               </div>
 
-              {/* Sync Mode */}
-              <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
-                <div className="text-xs font-bold text-slate-700">Chế độ đồng bộ:</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <label className="flex items-start gap-2 p-2 border rounded-lg cursor-pointer text-xs">
+              {/* Mode Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Cách nạp công việc vào bảng:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border text-xs cursor-pointer transition-colors ${
+                      syncMode === 'merge'
+                        ? 'border-emerald-500 bg-emerald-50/40 text-emerald-950 font-medium'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
                     <input
                       type="radio"
                       name="syncMode"
                       value="merge"
                       checked={syncMode === 'merge'}
                       onChange={() => setSyncMode('merge')}
-                      className="mt-0.5 text-emerald-600"
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
                     />
                     <div>
-                      <div className="font-semibold text-slate-900">Gộp &amp; Cập nhật (Merge)</div>
-                      <div className="text-[10px] text-slate-500">Giữ việc cũ, bổ sung việc mới</div>
+                      <div className="font-bold">Gộp việc (Khuyên dùng)</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Giữ lại việc đang có, chỉ thêm việc mới hoặc cập nhật việc trùng tiêu đề.
+                      </div>
                     </div>
                   </label>
-                  <label className="flex items-start gap-2 p-2 border rounded-lg cursor-pointer text-xs">
+
+                  <label
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border text-xs cursor-pointer transition-colors ${
+                      syncMode === 'replace'
+                        ? 'border-emerald-500 bg-emerald-50/40 text-emerald-950 font-medium'
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
                     <input
                       type="radio"
                       name="syncMode"
                       value="replace"
                       checked={syncMode === 'replace'}
                       onChange={() => setSyncMode('replace')}
-                      className="mt-0.5 text-amber-600"
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
                     />
                     <div>
-                      <div className="font-semibold text-slate-900">Ghi đè (Replace)</div>
-                      <div className="text-[10px] text-slate-500">Làm mới toàn bộ danh sách</div>
+                      <div className="font-bold">Thay thế toàn bộ</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Xóa danh sách việc cá nhân hiện tại và nạp 100% việc từ Sheet.
+                      </div>
                     </div>
                   </label>
                 </div>
               </div>
 
-              {/* Auto Sync checkbox */}
+              {/* Auto Sync Toggle */}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={autoSync}
-                    onChange={(e) => setAutoSync(e.target.checked)}
-                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
-                  />
-                  <span className="text-xs font-semibold text-slate-800">
-                    Tự động đồng bộ mỗi khi mở tab Việc cá nhân
-                  </span>
+                <label className="flex items-center justify-between cursor-pointer select-none">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={autoSync}
+                      onChange={(e) => setAutoSync(e.target.checked)}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-800">
+                        Tự động đồng bộ mỗi khi mở tab Công việc cá nhân
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Hệ thống sẽ tự kéo dữ liệu mới nhất từ Sheet mà không cần bạn bấm nút.
+                      </div>
+                    </div>
+                  </div>
+                  <RefreshCw className="w-4 h-4 text-slate-400" />
                 </label>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="submit"
-                  disabled={isLoading || !urlInput.trim()}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-                  <span>{isLoading ? 'Đang tải…' : 'Đồng bộ ngay'}</span>
-                </button>
+              {/* Submit Buttons */}
+              <div className="flex items-center justify-between pt-2">
+                {config.sheetUrl && config.syncMethod !== 'service-account' ? (
+                  <button
+                    type="button"
+                    onClick={handleUnlink}
+                    className="inline-flex items-center gap-1 text-xs text-rose-600 hover:underline cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hủy liên kết link</span>
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isLoading || !urlInput.trim()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                    <span>{isLoading ? 'Đang tải…' : 'Đồng bộ ngay'}</span>
+                  </button>
+                </div>
               </div>
             </form>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 flex-shrink-0">
-          <span>
+        {/* Footer info */}
+        <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 flex-shrink-0">
+          <div>
             {config.lastSyncedAt ? (
-              <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3 text-slate-400" />
-                Đồng bộ gần nhất: {new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(config.lastSyncedAt))} ({config.lastTaskCount || 0} việc)
-              </span>
+              <span>Đồng bộ lần cuối: {new Date(config.lastSyncedAt).toLocaleString('vi-VN')}</span>
             ) : (
-              'Chưa từng đồng bộ'
+              <span>Chưa từng đồng bộ</span>
             )}
-          </span>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-semibold cursor-pointer"
+            className="text-slate-500 hover:text-slate-700 font-medium cursor-pointer"
           >
             Đóng
           </button>

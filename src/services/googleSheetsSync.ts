@@ -2,8 +2,9 @@ import type { PersonalTask } from '../types/personalTask';
 import { parseExcelWorkbook, autoDetectMapping, convertRowsToTasks } from './personalTaskExcel';
 
 export interface GoogleSheetsSyncConfig {
-  sheetUrl: string; // One-way read/export URL
+  sheetUrl: string; // Google Sheets URL
   scriptUrl?: string; // Two-way Apps Script Web App URL
+  syncMethod?: 'service-account' | 'apps-script'; // Mode: 'service-account' (default) or 'apps-script'
   autoSync: boolean; // Auto-pull on tab open
   autoPush?: boolean; // Auto-push to sheet on task create/update/drag-and-drop
   syncMode: 'merge' | 'replace';
@@ -22,6 +23,7 @@ export function getGoogleSheetsSyncConfig(scopeKey: string): GoogleSheetsSyncCon
       return {
         sheetUrl: typeof parsed.sheetUrl === 'string' ? parsed.sheetUrl : '',
         scriptUrl: typeof parsed.scriptUrl === 'string' ? parsed.scriptUrl : '',
+        syncMethod: parsed.syncMethod === 'apps-script' ? 'apps-script' : 'service-account',
         autoSync: Boolean(parsed.autoSync),
         autoPush: parsed.autoPush !== undefined ? Boolean(parsed.autoPush) : true,
         syncMode: parsed.syncMode === 'replace' ? 'replace' : 'merge',
@@ -31,7 +33,7 @@ export function getGoogleSheetsSyncConfig(scopeKey: string): GoogleSheetsSyncCon
       };
     }
   } catch {}
-  return { sheetUrl: '', scriptUrl: '', autoSync: false, autoPush: true, syncMode: 'merge' };
+  return { sheetUrl: '', scriptUrl: '', syncMethod: 'service-account', autoSync: false, autoPush: true, syncMode: 'merge' };
 }
 
 export function saveGoogleSheetsSyncConfig(scopeKey: string, config: GoogleSheetsSyncConfig): void {
@@ -482,4 +484,123 @@ export async function pullTasksFromAppsScript(scriptUrl: string): Promise<Person
   });
 
   return tasks;
+}
+
+export interface ServiceAccountStatus {
+  configured: boolean;
+  clientEmail: string | null;
+  projectId: string | null;
+  hint: string;
+}
+
+/**
+ * Checks if the server has Google Service Account credentials configured.
+ */
+export async function fetchServiceAccountStatus(): Promise<ServiceAccountStatus> {
+  try {
+    const res = await fetch('/api/google-sheets/service-account/status');
+    if (!res.ok) {
+      return { configured: false, clientEmail: null, projectId: null, hint: 'Không thể kết nối máy chủ.' };
+    }
+    return res.json();
+  } catch (err: any) {
+    return { configured: false, clientEmail: null, projectId: null, hint: err?.message || 'Lỗi mạng.' };
+  }
+}
+
+/**
+ * Tests connection to Google Sheet via Service Account.
+ */
+export async function testServiceAccountConnection(
+  sheetUrl: string
+): Promise<{ success: boolean; message: string; sheetTitle?: string; count?: number }> {
+  const res = await fetch('/api/google-sheets/service-account/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: sheetUrl.trim() }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Lỗi kết nối tới Google Sheets qua Service Account.');
+  }
+  return data;
+}
+
+/**
+ * Pulls tasks directly from Google Sheet via Service Account.
+ */
+export async function pullTasksFromServiceAccount(sheetUrl: string): Promise<PersonalTask[]> {
+  const res = await fetch('/api/google-sheets/service-account/pull', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: sheetUrl.trim() }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Lỗi tải công việc từ Google Sheets.');
+  }
+
+  const rawTasks = data.tasks || [];
+  return rawTasks.map((rt: any, idx: number) => ({
+    id: rt.id || `sheet-task-${Date.now()}-${idx}`,
+    week: rt.week || '',
+    assignedDate: '',
+    category: rt.category || 'Google Sheet',
+    title: rt.title || '',
+    description: rt.description || '',
+    statusName: rt.statusName || 'New',
+    priorityName: rt.priorityName || 'Normal',
+    doneRatio: typeof rt.doneRatio === 'number' ? rt.doneRatio : 0,
+    estimatedHours: rt.estimatedHours || '',
+    resultNote: '',
+    dueDate: rt.dueDate || '',
+    source: 'excel' as const,
+    createdAt: new Date().toISOString(),
+    updatedAt: rt.updatedAt || new Date().toISOString(),
+  }));
+}
+
+/**
+ * Pushes a single task update, insert, or delete to Google Sheet via Service Account.
+ */
+export async function pushTaskToServiceAccount(
+  sheetUrl: string,
+  task: PersonalTask,
+  action: 'create' | 'update' | 'delete'
+): Promise<boolean> {
+  if (!sheetUrl || !sheetUrl.trim()) return false;
+  try {
+    const res = await fetch('/api/google-sheets/service-account/push-task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: sheetUrl.trim(), task, action }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return Boolean(res.ok && data.success);
+  } catch (err) {
+    console.warn('[pushTaskToServiceAccount Error]:', err);
+    return false;
+  }
+}
+
+/**
+ * Pushes all tasks to Google Sheet via Service Account (full overwrite).
+ */
+export async function pushAllTasksToServiceAccount(
+  sheetUrl: string,
+  tasks: PersonalTask[]
+): Promise<{ count: number }> {
+  if (!sheetUrl || !sheetUrl.trim()) {
+    throw new Error('Vui lòng cung cấp link Google Sheets.');
+  }
+  const res = await fetch('/api/google-sheets/service-account/push-all', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: sheetUrl.trim(), tasks, mode: 'replace_all' }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || 'Lỗi đẩy toàn bộ công việc lên Google Sheet.');
+  }
+  return { count: data.count || tasks.length };
 }
