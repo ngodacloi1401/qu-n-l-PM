@@ -4,6 +4,8 @@ import {
   getCurrentWeekRange,
   isPersonalTaskDone,
   isRedmineIssueClosed,
+  parseDeadline,
+  formatTimeRemaining,
   computeWeeklyNotifications,
 } from '../src/services/weeklyNotificationService.js';
 import type { PersonalTask } from '../src/types/personalTask.js';
@@ -19,6 +21,46 @@ test('getCurrentWeekRange calculates Monday to Sunday correctly', () => {
   assert.equal(range.startStr, '2026-10-05');
   assert.equal(range.endStr, '2026-10-11');
   assert.ok(range.weekNumber > 0);
+});
+
+test('parseDeadline handles date only and date-time strings accurately', () => {
+  // Date only -> defaults to 17:30
+  const d1 = parseDeadline('2026-10-07');
+  assert.ok(d1);
+  assert.equal(d1?.dateStr, '2026-10-07');
+  assert.equal(d1?.timeStr, '17:30');
+  assert.equal(d1?.hasExplicitTime, false);
+
+  // Date with time
+  const d2 = parseDeadline('2026-10-07 14:15');
+  assert.ok(d2);
+  assert.equal(d2?.dateStr, '2026-10-07');
+  assert.equal(d2?.timeStr, '14:15');
+  assert.equal(d2?.hasExplicitTime, true);
+
+  // ISO string
+  const d3 = parseDeadline('2026-10-07T09:00:00.000Z');
+  assert.ok(d3);
+  assert.equal(d3?.dateStr, '2026-10-07');
+  assert.equal(d3?.timeStr, '09:00');
+
+  // Invalid strings
+  assert.equal(parseDeadline(''), null);
+  assert.equal(parseDeadline('invalid-date'), null);
+});
+
+test('formatTimeRemaining outputs correct human labels for hours and days', () => {
+  // 2 hours 30 mins remaining
+  const remainMs = 2.5 * 3600 * 1000;
+  assert.match(formatTimeRemaining(remainMs), /Còn 2 giờ 30p/);
+
+  // 1 day 4 hours remaining
+  const dayMs = 28 * 3600 * 1000;
+  assert.match(formatTimeRemaining(dayMs), /Còn 1 ngày 4h/);
+
+  // Overdue 3 hours
+  const overdueMs = -3 * 3600 * 1000;
+  assert.match(formatTimeRemaining(overdueMs), /Quá hạn 3 giờ/);
 });
 
 test('isPersonalTaskDone checks completed status or 100% doneRatio', () => {
@@ -49,55 +91,98 @@ test('isRedmineIssueClosed accurately identifies closed issues', () => {
   assert.equal(isRedmineIssueClosed(i4), false);
 });
 
-test('computeWeeklyNotifications categorizes overdue, due soon, and this week tasks', () => {
-  const refNow = new Date('2026-10-07T10:00:00Z'); // Wednesday
+test('computeWeeklyNotifications strictly excludes tasks from past weeks/years and includes exact dates and hours', () => {
+  // Reference: Wednesday, Oct 07, 2026 at 10:00:00
+  // Week 41 is 2026-10-05 (Monday) to 2026-10-11 (Sunday)
+  const refNow = new Date('2026-10-07T10:00:00');
 
   const personalTasks: PersonalTask[] = [
+    // 1. Overdue within this week (Monday 2026-10-05) -> INCLUDED in thisWeek & overdue
     {
-      id: 'pt-1',
-      title: 'Việc đã trễ hạn',
-      dueDate: '2026-10-04', // past date
+      id: 'pt-mon',
+      title: 'Việc hạn thứ Hai tuần này',
+      week: 'Tuần 41 (05/10 - 11/10)',
+      dueDate: '2026-10-05 17:00',
       statusName: 'In Progress',
       priorityName: 'High',
     } as PersonalTask,
+
+    // 2. Due today (Wednesday 2026-10-07 at 17:30) -> INCLUDED in thisWeek & dueToday
     {
-      id: 'pt-2',
-      title: 'Việc hạn hôm nay',
-      dueDate: '2026-10-07', // today
+      id: 'pt-today',
+      title: 'Việc hạn 17:30 hôm nay',
+      week: 'Tuần 41 (05/10 - 11/10)',
+      dueDate: '2026-10-07 17:30',
       statusName: 'New',
       priorityName: 'Urgent',
     } as PersonalTask,
+
+    // 3. Due tomorrow (Thursday 2026-10-08 at 09:00) -> INCLUDED in thisWeek & dueTomorrow
     {
-      id: 'pt-3',
-      title: 'Việc tuần sau',
-      dueDate: '2026-10-20',
+      id: 'pt-tomorrow',
+      title: 'Việc hạn sáng mai',
+      week: 'Tuần 41',
+      dueDate: '2026-10-08 09:00',
       statusName: 'New',
       priorityName: 'Normal',
     } as PersonalTask,
+
+    // 4. OLD OVERDUE FROM 2025 (e.g. 2025-12-02) -> MUST BE EXCLUDED!
+    {
+      id: 'pt-old-2025',
+      title: 'Việc cũ từ năm 2025',
+      week: 'Tuần 49/2025',
+      dueDate: '2025-12-02',
+      statusName: 'New',
+    } as PersonalTask,
+
+    // 5. OLD OVERDUE FROM LAST MONTH (2026-09-12) -> MUST BE EXCLUDED!
+    {
+      id: 'pt-old-sep',
+      title: 'Việc cũ từ tháng 9',
+      week: 'Tuần 37',
+      dueDate: '2026-09-12',
+      statusName: 'New',
+    } as PersonalTask,
+
+    // 6. Completed task -> MUST BE EXCLUDED!
     {
       id: 'pt-completed',
       title: 'Việc đã xong',
-      dueDate: '2026-10-01',
+      week: 'Tuần 41',
+      dueDate: '2026-10-07 12:00',
       statusName: 'Done',
       doneRatio: 100,
     } as PersonalTask,
   ];
 
   const redmineIssues: RedmineIssue[] = [
+    // 1. Issue due Friday this week (2026-10-09) assigned to user -> INCLUDED
     {
-      id: 101,
-      subject: 'Bug khẩn cấp cần sửa',
-      due_date: '2026-10-08', // tomorrow (due soon)
+      id: 201,
+      subject: 'Review spec hệ thống',
+      due_date: '2026-10-09',
       status: { id: 1, name: 'New' },
       priority: { id: 4, name: 'High' },
       assigned_to: { id: 99, name: 'Lợi Ngô' },
     } as RedmineIssue,
+
+    // 2. Old issue from 2025-12-02 -> MUST BE EXCLUDED!
     {
-      id: 102,
+      id: 28014,
+      subject: 'UAT - Test import danh mục 2025',
+      due_date: '2025-12-02',
+      status: { id: 1, name: 'New' },
+      priority: { id: 2, name: 'Normal' },
+      assigned_to: { id: 99, name: 'Lợi Ngô' },
+    } as RedmineIssue,
+
+    // 3. Issue assigned to someone else -> MUST BE EXCLUDED!
+    {
+      id: 301,
       subject: 'Việc của người khác',
       due_date: '2026-10-07',
       status: { id: 1, name: 'New' },
-      priority: { id: 2, name: 'Normal' },
       assigned_to: { id: 88, name: 'Người khác' },
     } as RedmineIssue,
   ];
@@ -109,19 +194,33 @@ test('computeWeeklyNotifications categorizes overdue, due soon, and this week ta
     now: refNow,
   });
 
-  // pt-1 is overdue
+  // Verify: old 2025 and old month issues are completely excluded!
+  assert.equal(summary.thisWeek.some((i) => i.id === 'personal-pt-old-2025'), false);
+  assert.equal(summary.thisWeek.some((i) => i.id === 'personal-pt-old-sep'), false);
+  assert.equal(summary.thisWeek.some((i) => i.id === 'redmine-28014'), false);
+  assert.equal(summary.thisWeek.some((i) => i.id === 'redmine-301'), false);
+
+  // Included items in this week: pt-mon, pt-today, pt-tomorrow, redmine-201
+  assert.equal(summary.thisWeek.length, 4);
+
+  // pt-mon is overdue (was due Monday 17:00, now is Wed 10:00)
   assert.equal(summary.overdue.length, 1);
-  assert.equal(summary.overdue[0].id, 'personal-pt-1');
+  assert.equal(summary.overdue[0].id, 'personal-pt-mon');
+  assert.match(summary.overdue[0].timeRemainingLabel, /Quá hạn/);
 
-  // pt-2 (today) + issue 101 (tomorrow) are due soon
-  assert.equal(summary.dueSoon.length, 2);
-  assert.ok(summary.dueSoon.some((i) => i.id === 'personal-pt-2'));
-  assert.ok(summary.dueSoon.some((i) => i.id === 'redmine-101'));
+  // pt-today is due today at 17:30
+  assert.equal(summary.dueToday.length, 1);
+  assert.equal(summary.dueToday[0].id, 'personal-pt-today');
+  assert.equal(summary.dueToday[0].dayLabel, 'Hôm nay');
+  assert.equal(summary.dueToday[0].dueTimeFormatted, '17:30');
+  assert.match(summary.dueToday[0].timeRemainingLabel, /Còn 7 giờ/);
 
-  // issue 102 was assigned to someone else -> excluded
-  assert.equal(summary.thisWeek.some((i) => i.id === 'redmine-102'), false);
+  // pt-tomorrow is due tomorrow at 09:00
+  assert.equal(summary.dueTomorrow.length, 1);
+  assert.equal(summary.dueTomorrow[0].id, 'personal-pt-tomorrow');
+  assert.equal(summary.dueTomorrow[0].dayLabel, 'Ngày mai');
+  assert.equal(summary.dueTomorrow[0].dueTimeFormatted, '09:00');
 
-  // totalActionRequired = overdue (1) + dueSoon (2) = 3
-  assert.equal(summary.totalActionRequired, 3);
-  assert.ok(summary.currentWeekLabel.includes('Tuần'));
+  // Total action required is strictly small (e.g. 2 instead of 50!)
+  assert.equal(summary.totalActionRequired, summary.overdue.length + summary.dueSoon.length);
 });

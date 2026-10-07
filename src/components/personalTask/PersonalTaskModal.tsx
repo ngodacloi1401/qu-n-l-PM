@@ -65,7 +65,12 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
   const [statusName, setStatusName] = useState<string>(task?.statusName || statusOptions[0] || 'New');
   const [priorityName, setPriorityName] = useState<string>(task?.priorityName || 'Normal');
   const [assignedDate, setAssignedDate] = useState(task?.assignedDate || new Date().toISOString().split('T')[0]);
-  const [dueDate, setDueDate] = useState(task?.dueDate || '');
+  const initialDue = task?.dueDate || '';
+  const [dueDate, setDueDate] = useState(initialDue.slice(0, 10));
+  const [dueTime, setDueTime] = useState(() => {
+    const match = initialDue.match(/[T\s](\d{1,2}:\d{2})/);
+    return match ? match[1] : '';
+  });
   const [estimatedHours, setEstimatedHours] = useState(
     task?.estimatedHours !== undefined ? String(task.estimatedHours) : ''
   );
@@ -95,7 +100,7 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
       doneRatio,
       estimatedHours: estimatedHours.trim() || undefined,
       resultNote: resultNote.trim(),
-      dueDate,
+      dueDate: dueDate ? (dueTime ? `${dueDate} ${dueTime}` : dueDate) : '',
       delayReason: delayReason.trim(),
       source: task?.source === 'excel' ? 'excel' : 'manual',
       createdAt: task?.createdAt || nowStr,
@@ -255,12 +260,21 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Hạn chót (Deadline):
               </label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl text-slate-800 bg-white"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="flex-1 text-xs px-3 py-2 border border-slate-300 rounded-xl text-slate-800 bg-white"
+                />
+                <input
+                  type="time"
+                  value={dueTime}
+                  onChange={(e) => setDueTime(e.target.value)}
+                  className="w-24 text-xs px-2 py-2 border border-slate-300 rounded-xl text-slate-800 bg-white"
+                  title="Giờ hạn chót"
+                />
+              </div>
             </div>
           </div>
 

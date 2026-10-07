@@ -6,10 +6,10 @@ import {
   Clock,
   Calendar,
   CheckCircle2,
-  ExternalLink,
   Sparkles,
   ChevronRight,
   ShieldAlert,
+  Flame,
 } from 'lucide-react';
 import type { PersonalTask } from '../types/personalTask';
 import type { RedmineIssue, RedmineUser } from '../types/redmine';
@@ -38,7 +38,7 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
   onSelectPersonalTask,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'urgent' | 'overdue' | 'dueSoon' | 'all'>('urgent');
+  const [activeTab, setActiveTab] = useState<'today_overdue' | 'dueSoon' | 'all'>('today_overdue');
   const [browserNotifActive, setBrowserNotifActive] = useState(() => isBrowserNotificationEnabled());
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -66,16 +66,16 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
     };
   }, [isOpen]);
 
-  // Trigger browser notification once per session if urgent items exist and permission is on
+  // Trigger browser notification once per session when there are urgent tasks
   const hasAlertedRef = useRef(false);
   useEffect(() => {
     if (browserNotifActive && summary.totalActionRequired > 0 && !hasAlertedRef.current) {
       hasAlertedRef.current = true;
-      const title = `Bạn có ${summary.totalActionRequired} việc cần xử lý trong tuần!`;
-      const body = `${summary.overdue.length} việc quá hạn, ${summary.dueSoon.length} việc sắp tới hạn. Nhấn để mở bảng quản lý.`;
+      const title = `${summary.currentWeekLabel}: ${summary.totalActionRequired} việc cần xử lý!`;
+      const body = `${summary.dueToday.length} việc có hạn hôm nay, ${summary.overdue.length} việc quá hạn tuần này.`;
       sendBrowserNotification(title, { body });
     }
-  }, [browserNotifActive, summary.totalActionRequired, summary.overdue.length, summary.dueSoon.length]);
+  }, [browserNotifActive, summary.totalActionRequired, summary.dueToday.length, summary.overdue.length, summary.currentWeekLabel]);
 
   const handleToggleBrowserNotif = async () => {
     if (!isBrowserNotificationSupported()) {
@@ -84,36 +84,33 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
     }
 
     if (browserNotifActive) {
-      // User wants to disable
       setBrowserNotifActive(false);
     } else {
       const granted = await requestBrowserNotificationPermission();
       setBrowserNotifActive(granted);
       if (granted) {
         sendBrowserNotification('Đã bật thông báo công việc tuần!', {
-          body: 'Hệ thống sẽ nhắc nhở bạn khi có công việc sắp tới hạn hoặc trễ hạn trong tuần.',
+          body: `Hệ thống sẽ nhắc nhở theo giờ và ngày cụ thể cho ${summary.currentWeekLabel}.`,
         });
       }
     }
   };
 
-  const urgentItems = useMemo(() => {
-    return [...summary.overdue, ...summary.dueSoon];
-  }, [summary.overdue, summary.dueSoon]);
+  const todayAndOverdueItems = useMemo(() => {
+    return [...summary.overdue, ...summary.dueToday];
+  }, [summary.overdue, summary.dueToday]);
 
   const displayItems = useMemo(() => {
     switch (activeTab) {
-      case 'overdue':
-        return summary.overdue;
+      case 'today_overdue':
+        return todayAndOverdueItems;
       case 'dueSoon':
-        return summary.dueSoon;
+        return summary.dueTomorrow;
       case 'all':
-        return summary.thisWeek;
-      case 'urgent':
       default:
-        return urgentItems;
+        return summary.thisWeek;
     }
-  }, [activeTab, summary.overdue, summary.dueSoon, summary.thisWeek, urgentItems]);
+  }, [activeTab, todayAndOverdueItems, summary.dueTomorrow, summary.thisWeek]);
 
   const handleItemClick = (item: WeeklyNotificationItem) => {
     setIsOpen(false);
@@ -122,35 +119,6 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
     } else if (item.source === 'redmine' && item.rawRedmineIssue && onSelectIssue) {
       onSelectIssue(item.rawRedmineIssue);
     }
-  };
-
-  const formatDueNotice = (item: WeeklyNotificationItem) => {
-    if (!item.dueDate) return 'Không có deadline';
-    const due = item.dueDate.slice(0, 10);
-    const today = new Date().toISOString().slice(0, 10);
-
-    if (item.isOverdue) {
-      return (
-        <span className="text-rose-600 font-semibold flex items-center gap-1">
-          <AlertTriangle className="w-3 h-3" />
-          Quá hạn ({due})
-        </span>
-      );
-    }
-    if (due === today) {
-      return (
-        <span className="text-amber-600 font-bold flex items-center gap-1">
-          <Clock className="w-3 h-3" />
-          Hạn chót hôm nay!
-        </span>
-      );
-    }
-    return (
-      <span className="text-slate-500 flex items-center gap-1">
-        <Calendar className="w-3 h-3" />
-        Hạn: {due}
-      </span>
-    );
   };
 
   return (
@@ -177,12 +145,12 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
 
       {/* Popover Dropdown */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute right-0 mt-2 w-84 sm:w-98 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
           {/* Header */}
           <div className="p-3.5 bg-slate-900 text-white flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold tracking-wide uppercase text-emerald-400">
+                <span className="text-[11px] font-bold tracking-wide uppercase text-emerald-400">
                   {summary.currentWeekLabel}
                 </span>
               </div>
@@ -214,31 +182,17 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
           <div className="flex items-center gap-1 p-2 bg-slate-50 border-b border-slate-200 text-xs overflow-x-auto">
             <button
               type="button"
-              onClick={() => setActiveTab('urgent')}
+              onClick={() => setActiveTab('today_overdue')}
               className={`px-2.5 py-1 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer flex-shrink-0 ${
-                activeTab === 'urgent'
+                activeTab === 'today_overdue'
                   ? 'bg-rose-600 text-white shadow-2xs'
                   : 'text-slate-600 hover:bg-slate-200'
               }`}
             >
-              <span>Cần xử lý</span>
+              <Flame className="w-3 h-3 text-amber-300" />
+              <span>Hôm nay &amp; Quá hạn</span>
               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20">
-                {urgentItems.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('overdue')}
-              className={`px-2.5 py-1 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer flex-shrink-0 ${
-                activeTab === 'overdue'
-                  ? 'bg-rose-100 text-rose-800'
-                  : 'text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <span>Quá hạn</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-200/50">
-                {summary.overdue.length}
+                {todayAndOverdueItems.length}
               </span>
             </button>
 
@@ -247,13 +201,13 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
               onClick={() => setActiveTab('dueSoon')}
               className={`px-2.5 py-1 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer flex-shrink-0 ${
                 activeTab === 'dueSoon'
-                  ? 'bg-amber-100 text-amber-800'
+                  ? 'bg-amber-100 text-amber-900 font-bold'
                   : 'text-slate-600 hover:bg-slate-200'
               }`}
             >
-              <span>Sắp tới hạn</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-200/50">
-                {summary.dueSoon.length}
+              <span>Ngày mai</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-200/60 text-amber-950">
+                {summary.dueTomorrow.length}
               </span>
             </button>
 
@@ -266,8 +220,8 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
                   : 'text-slate-600 hover:bg-slate-200'
               }`}
             >
-              <span>Tất cả tuần</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-300">
+              <span>Tất cả tuần này</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-300 text-slate-800">
                 {summary.thisWeek.length}
               </span>
             </button>
@@ -284,9 +238,9 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
                   Không có công việc nào trong mục này!
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  {activeTab === 'urgent'
-                    ? 'Tuyệt vời! Bạn không có việc nào quá hạn hoặc sắp hết hạn trong tuần.'
-                    : 'Toàn bộ công việc đang diễn ra đúng tiến độ.'}
+                  {activeTab === 'today_overdue'
+                    ? 'Tuyệt vời! Bạn không có việc nào quá hạn hoặc cần hoàn thành gấp hôm nay.'
+                    : 'Toàn bộ công việc trong tuần đang diễn ra đúng tiến độ.'}
                 </p>
               </div>
             ) : (
@@ -295,14 +249,18 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
                   key={item.id}
                   onClick={() => handleItemClick(item)}
                   className={`p-3 transition-colors cursor-pointer hover:bg-slate-50 group flex items-start gap-2.5 ${
-                    item.isOverdue ? 'bg-rose-50/30' : item.isDueSoon ? 'bg-amber-50/20' : ''
+                    item.isOverdue
+                      ? 'bg-rose-50/40 border-l-3 border-rose-500'
+                      : item.isDueToday
+                      ? 'bg-amber-50/30 border-l-3 border-amber-500'
+                      : 'border-l-3 border-transparent'
                   }`}
                 >
                   <div className="mt-0.5 flex-shrink-0">
                     {item.isOverdue ? (
                       <ShieldAlert className="w-4 h-4 text-rose-600" />
-                    ) : item.isDueSoon ? (
-                      <Clock className="w-4 h-4 text-amber-500" />
+                    ) : item.isDueToday ? (
+                      <Clock className="w-4 h-4 text-amber-600" />
                     ) : (
                       <Calendar className="w-4 h-4 text-emerald-600" />
                     )}
@@ -330,9 +288,27 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
                       {item.title}
                     </div>
 
+                    {/* Deadline date, exact time & hourly countdown */}
                     <div className="flex items-center justify-between text-[11px] mt-1.5">
-                      <div className="text-[11px]">{formatDueNotice(item)}</div>
-                      <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                      <div className="flex items-center gap-1">
+                        <span className="font-semibold text-slate-700">
+                          {item.dayLabel} lúc {item.dueTimeFormatted}
+                        </span>
+                        <span className="text-slate-400">&bull;</span>
+                        <span
+                          className={`font-semibold ${
+                            item.isOverdue
+                              ? 'text-rose-600'
+                              : item.isDueToday
+                              ? 'text-amber-700'
+                              : 'text-emerald-600'
+                          }`}
+                        >
+                          {item.timeRemainingLabel}
+                        </span>
+                      </div>
+
+                      <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded flex-shrink-0">
                         {item.statusName}
                       </span>
                     </div>
@@ -348,12 +324,12 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
           <div className="p-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
             <span>
               {summary.totalActionRequired > 0
-                ? `${summary.totalActionRequired} việc cần hành động`
+                ? `${summary.totalActionRequired} việc cần hành động gấp`
                 : 'Tiến độ tuần đang rất tốt'}
             </span>
             <span className="text-emerald-600 font-semibold flex items-center gap-1">
               <Sparkles className="w-3 h-3" />
-              Tự động cập nhật
+              Cập nhật theo giờ thực
             </span>
           </div>
         </div>
