@@ -14,6 +14,8 @@ import {
   RotateCcw,
   Sparkles,
   Link2,
+  LayoutGrid,
+  TableProperties,
 } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import type {
@@ -41,6 +43,7 @@ import {
 } from '../../services/personalTaskStorage';
 import { exportPersonalTasksToExcel } from '../../services/personalTaskExcel';
 import { PersonalTaskKanban } from './PersonalTaskKanban';
+import { PersonalTaskTable } from './PersonalTaskTable';
 import { ExcelImportModal } from './ExcelImportModal';
 import { PersonalTaskModal } from './PersonalTaskModal';
 import { PersonalTaskAIModal } from './PersonalTaskAIModal';
@@ -123,6 +126,7 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedPriority, setSelectedPriority] = useState('all');
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
 
   // Modals
   const [showImportModal, setShowImportModal] = useState(false);
@@ -676,19 +680,66 @@ export const PersonalTaskView: React.FC<PersonalTaskViewProps> = ({
         </div>
       )}
 
-      {/* Kanban view */}
+      {/* Notion-style View Tabs: Board & Table */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+          <button
+            type="button"
+            onClick={() => setViewMode('kanban')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              viewMode === 'kanban'
+                ? 'bg-white text-slate-800 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Bảng (Board)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('table')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              viewMode === 'table'
+                ? 'bg-white text-slate-800 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <TableProperties className="w-3.5 h-3.5" />
+            <span>Bảng chi tiết (Table)</span>
+          </button>
+        </div>
+        <div className="text-xs text-slate-500 font-medium">
+          Hiển thị <span className="font-bold text-slate-800">{filteredTasks.length}</span> công việc
+        </div>
+      </div>
+
+      {/* Task Views */}
       {filteredTasks.length > 0 && (
-        <PersonalTaskKanban
-          tasks={filteredTasks}
-          statuses={statuses}
-          onUpdateTask={handleUpdateTask}
-          readOnly={false}
-          baseUrl={baseUrl}
-          onEditTask={(t) => {
-            setEditingTask(t);
-            setShowCreateModal(true);
-          }}
-        />
+        viewMode === 'kanban' ? (
+          <PersonalTaskKanban
+            tasks={filteredTasks}
+            statuses={statuses}
+            onUpdateTask={handleUpdateTask}
+            readOnly={false}
+            baseUrl={baseUrl}
+            onEditTask={(t) => {
+              setEditingTask(t);
+              setShowCreateModal(true);
+            }}
+          />
+        ) : (
+          <PersonalTaskTable
+            tasks={filteredTasks}
+            statuses={statuses}
+            priorities={priorities}
+            onUpdateTask={handleUpdateTask}
+            onEditTask={(t) => {
+              setEditingTask(t);
+              setShowCreateModal(true);
+            }}
+            onDeleteTask={handleDeleteTask}
+          />
+        )
       )}
 
       {/* Modals */}
