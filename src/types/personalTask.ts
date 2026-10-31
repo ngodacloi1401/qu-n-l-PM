@@ -1,3 +1,9 @@
+export interface SubTaskItem {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
 export interface PersonalTask {
   id: string;
   week: string; // e.g. "Tuần 09 (24/2-27/02)"
@@ -5,6 +11,7 @@ export interface PersonalTask {
   category: string; // Category / Nhóm việc (e.g. CAD ADDIN SHOP DRAWING, Platform, HOTFIX...)
   title: string; // Subject / Tên việc cần làm
   description: string; // Mô tả chi tiết
+  subtasks?: SubTaskItem[]; // Trello-style checklist items
 
   // Redmine Aligned Fields:
   trackerId?: number; // e.g. 6 (Bug), 4 (Task), 1 (User Story), 16 (Feature)...

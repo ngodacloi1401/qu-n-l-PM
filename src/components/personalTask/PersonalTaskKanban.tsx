@@ -1,8 +1,8 @@
 import React from 'react';
-import { Clock, AlertCircle, Edit2, ArrowRight, ArrowLeft, ExternalLink } from 'lucide-react';
+import { Clock, AlertCircle, Edit2, ArrowRight, ArrowLeft, ExternalLink, CheckSquare } from 'lucide-react';
 import type { PersonalTask } from '../../types/personalTask';
 import type { RedmineStatus } from '../../types/redmine';
-import { NotionStatusPicker } from './NotionStatusPicker';
+import { NotionStatusPicker, NOTION_PERSONAL_STATUS_NAMES } from './NotionStatusPicker';
 
 interface PersonalTaskKanbanProps {
   tasks: PersonalTask[];
@@ -32,39 +32,39 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
 }) => {
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // Standard 4 columns aligned with Redmine lifecycle:
-  // 1. Mới / To Do (New, Ready...)
-  // 2. Đang làm (In Progress...)
-  // 3. Kiểm thử / Chờ duyệt (QA testing, QA Verified, Feedback, Ready For QA...)
-  // 4. Hoàn thành / Đã đóng (Resolved, Closed, On PROD, Client Verified...)
+  // Standard 4 columns aligned with Notion / Trello board workflow:
+  // 1. To Do (Cần làm)
+  // 2. In Progress (Đang làm)
+  // 3. In Review / Blocked (Chờ duyệt / Hoãn)
+  // 4. Done (Hoàn tất)
   const columns: KanbanColConfig[] = [
     {
       id: 'new',
-      title: 'New (Mới tạo)',
+      title: 'To Do (Cần làm)',
       badgeBg: 'bg-slate-100',
       badgeText: 'text-slate-700',
       borderTop: 'border-t-slate-400',
-      matchStatuses: ['new', 'mới', 'chưa làm', 'to do'],
+      matchStatuses: ['to do', 'todo', 'new', 'mới', 'chưa làm', 'open', 'not started'],
     },
     {
       id: 'in_progress',
       title: 'In Progress (Đang làm)',
-      badgeBg: 'bg-amber-100',
-      badgeText: 'text-amber-800',
-      borderTop: 'border-t-amber-500',
+      badgeBg: 'bg-sky-100',
+      badgeText: 'text-sky-800',
+      borderTop: 'border-t-sky-500',
       matchStatuses: ['in progress', 'đang làm', 'doing', 'on stg', 'pending'],
     },
     {
       id: 'review',
-      title: 'QA / Feedback (Chờ duyệt)',
-      badgeBg: 'bg-blue-100',
-      badgeText: 'text-blue-800',
-      borderTop: 'border-t-blue-500',
-      matchStatuses: ['qa testing', 'ready for qa', 'qa verified', 'feedback', 'review', 'kiểm tra'],
+      title: 'In Review / Blocked (Chờ duyệt / Hoãn)',
+      badgeBg: 'bg-purple-100',
+      badgeText: 'text-purple-800',
+      borderTop: 'border-t-purple-500',
+      matchStatuses: ['in review', 'review', 'kiểm tra', 'blocked', 'tắc nghẽn', 'qa testing', 'ready for qa', 'qa verified', 'feedback'],
     },
     {
       id: 'closed',
-      title: 'Closed / Resolved (Đã đóng)',
+      title: 'Done (Hoàn tất)',
       badgeBg: 'bg-emerald-100',
       badgeText: 'text-emerald-800',
       borderTop: 'border-t-emerald-500',
@@ -92,10 +92,10 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
     const nextIdx = direction === 'next' ? currentIdx + 1 : currentIdx - 1;
     if (nextIdx >= 0 && nextIdx < colOrder.length) {
       const targetColId = colOrder[nextIdx];
-      let targetStatusName = 'New';
+      let targetStatusName = 'To Do';
       if (targetColId === 'in_progress') targetStatusName = 'In Progress';
-      else if (targetColId === 'review') targetStatusName = 'QA testing';
-      else if (targetColId === 'closed') targetStatusName = 'Closed';
+      else if (targetColId === 'review') targetStatusName = 'In Review';
+      else if (targetColId === 'closed') targetStatusName = 'Done';
 
       onUpdateTask({
         ...task,
@@ -154,12 +154,18 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                       key={task.id}
                       className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-xs hover:shadow-md transition-all group"
                     >
-                      {/* Tracker & Priority */}
+                      {/* Tracker, Category & Origin */}
                       <div className="flex items-center justify-between gap-2 mb-2">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
-                            {task.trackerName || 'Task'}
-                          </span>
+                          {task.source === 'slack' ? (
+                            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-1.5 py-0.5 rounded flex items-center gap-1">
+                              💬 Slack {task.slackSender ? `@${task.slackSender}` : ''}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                              {task.trackerName || 'Task'}
+                            </span>
+                          )}
                           <span className="text-[10px] font-semibold text-slate-500 truncate max-w-[100px]">
                             {task.category || 'Chung'}
                           </span>
@@ -193,6 +199,30 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                         {task.title}
                       </h5>
 
+                      {/* Subtasks Progress Badge (Trello Style) */}
+                      {task.subtasks && task.subtasks.length > 0 && (
+                        <div className="flex items-center gap-1.5 mb-2">
+                          {(() => {
+                            const doneCount = task.subtasks.filter((s) => s.completed).length;
+                            const isAllDone = doneCount === task.subtasks.length;
+                            return (
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
+                                  isAllDone
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                }`}
+                              >
+                                <CheckSquare className="w-3 h-3" />
+                                <span>
+                                  {doneCount}/{task.subtasks.length} việc con
+                                </span>
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      )}
+
                       {/* Project / Week & Assignee */}
                       <div className="flex items-center justify-between text-[10px] text-slate-500 mb-2">
                         <span className="truncate max-w-[150px] font-medium text-slate-600">
@@ -220,18 +250,16 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                           <NotionStatusPicker
                             value={task.statusName}
                             onChange={(name) => {
-                              const matched = statuses.find((s) => s.name === name);
-                              const isTargetClosed = matched?.is_closed || ['closed', 'resolved', 'done', 'hoàn thành'].some(w => name.toLowerCase().includes(w));
-                              const isTargetNew = ['new', 'not started', 'mới'].some(w => name.toLowerCase().includes(w));
+                              const isTargetClosed = ['done', 'closed', 'resolved', 'hoàn thành'].some(w => name.toLowerCase().includes(w));
+                              const isTargetNew = ['to do', 'todo', 'new', 'not started', 'mới'].some(w => name.toLowerCase().includes(w));
                               onUpdateTask({
                                 ...task,
-                                statusId: matched?.id,
                                 statusName: name,
                                 doneRatio: isTargetClosed ? 100 : isTargetNew ? 0 : (task.doneRatio || 50),
                                 updatedAt: new Date().toISOString(),
                               });
                             }}
-                            statuses={statuses}
+                            customStatusNames={NOTION_PERSONAL_STATUS_NAMES}
                             compact
                             disabled={readOnly}
                           />

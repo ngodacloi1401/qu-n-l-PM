@@ -15,21 +15,21 @@ export interface StatusGroupConfig {
 const STATUS_GROUPS: StatusGroupConfig[] = [
   {
     groupKey: 'todo',
-    label: 'Việc cần làm',
-    matchKeywords: ['new', 'not started', 'mới', 'chưa làm', 'to do', 'open'],
+    label: 'Việc cần làm (To Do)',
+    matchKeywords: ['new', 'not started', 'mới', 'chưa làm', 'to do', 'todo', 'open'],
   },
   {
     groupKey: 'in_progress',
-    label: 'Đang thực hiện',
+    label: 'Đang thực hiện (In Progress)',
     matchKeywords: [
       'in progress', 'đang làm', 'doing', 'pending', 'on stg',
       'qa testing', 'ready for qa', 'qa verified', 'feedback',
-      'review', 'kiểm tra',
+      'review', 'kiểm tra', 'in review', 'blocked', 'tắc nghẽn',
     ],
   },
   {
     groupKey: 'complete',
-    label: 'Hoàn tất',
+    label: 'Hoàn tất (Done)',
     matchKeywords: [
       'closed', 'resolved', 'done', 'hoàn thành', 'close-duplicated',
       'on prod', 'client verified', 'cancelled', 'rejected', 'hủy',
@@ -45,13 +45,25 @@ export interface NotionPillStyle {
 }
 
 /**
+ * Standard statuses for personal task management (Trello / Notion inspired)
+ */
+export const NOTION_PERSONAL_STATUS_NAMES = [
+  'To Do',
+  'In Progress',
+  'In Review',
+  'Blocked',
+  'Done',
+];
+
+/**
  * Resolve authentic Notion pastel pill colours based on status name.
  * Colors directly match the Notion status property screenshot:
  * - Cancelled: pastel pink bg + rose dot & text
- * - Pending / QA: pastel purple bg + purple dot & text
+ * - Blocked: pastel amber/orange bg + amber dot & text
+ * - Pending / QA / In Review: pastel purple bg + purple dot & text
  * - In Progress: pastel sky/blue bg + blue dot & text
  * - Done / Closed: pastel green bg + emerald dot & text
- * - Not started / New: pastel stone gray bg + stone dot & text
+ * - Not started / New / To Do: pastel stone gray bg + stone dot & text
  */
 export function getNotionPillStyle(statusName: string): NotionPillStyle {
   const s = (statusName || '').toLowerCase().trim();
@@ -66,7 +78,17 @@ export function getNotionPillStyle(statusName: string): NotionPillStyle {
     };
   }
 
-  // Pending / Feedback / QA (Pastel purple)
+  // Blocked / Tắc nghẽn (Pastel amber/orange)
+  if (s === 'blocked' || s.includes('block') || s.includes('tắc nghẽn') || s.includes('kẹt')) {
+    return {
+      pillBg: 'bg-amber-100',
+      pillHoverBg: 'hover:bg-amber-200',
+      pillText: 'text-amber-800',
+      dotBg: 'bg-amber-500',
+    };
+  }
+
+  // Pending / Feedback / QA / In Review (Pastel purple)
   if (s === 'pending' || s.includes('feedback') || s.includes('chờ') || s.includes('qa') || s.includes('review')) {
     return {
       pillBg: 'bg-purple-100',
@@ -96,7 +118,7 @@ export function getNotionPillStyle(statusName: string): NotionPillStyle {
     };
   }
 
-  // Not started / New / Mới (Pastel warm gray)
+  // Not started / New / Mới / To Do (Pastel warm gray)
   return {
     pillBg: 'bg-stone-200/80',
     pillHoverBg: 'hover:bg-stone-300/80',
@@ -129,6 +151,8 @@ interface NotionStatusPickerProps {
   onChange: (statusName: string) => void;
   /** Redmine statuses to populate the list (fallback to defaults) */
   statuses?: RedmineStatus[];
+  /** Custom list of status names (takes precedence over Redmine statuses, e.g. NOTION_PERSONAL_STATUS_NAMES) */
+  customStatusNames?: string[];
   /** Additional class names for the trigger button */
   className?: string;
   /** Compact mode (retains the rounded pill styling) */
@@ -138,10 +162,10 @@ interface NotionStatusPickerProps {
 }
 
 const DEFAULT_STATUS_NAMES = [
-  'Not started',
-  'Pending',
-  'In progress',
-  'Cancelled',
+  'To Do',
+  'In Progress',
+  'In Review',
+  'Blocked',
   'Done',
 ];
 
@@ -153,6 +177,7 @@ export const NotionStatusPicker: React.FC<NotionStatusPickerProps> = ({
   value,
   onChange,
   statuses,
+  customStatusNames,
   className = '',
   compact = false,
   disabled = false,
@@ -164,9 +189,10 @@ export const NotionStatusPicker: React.FC<NotionStatusPickerProps> = ({
 
   // Build the list of status names to show
   const statusNames = useMemo(() => {
+    if (customStatusNames && customStatusNames.length > 0) return customStatusNames;
     if (statuses && statuses.length > 0) return statuses.map((s) => s.name);
     return DEFAULT_STATUS_NAMES;
-  }, [statuses]);
+  }, [customStatusNames, statuses]);
 
   // Group statuses into Notion-style categories
   const grouped = useMemo(() => {

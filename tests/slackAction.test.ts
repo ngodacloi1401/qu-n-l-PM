@@ -49,7 +49,8 @@ test('convertSlackAlertToTaskDraft correctly creates PersonalTask draft with sla
   assert.equal(draft.priorityName, 'High'); // Since urgency is Cao
   assert.equal(draft.category, 'Họp trực tuyến'); // Since meetUrl is present
   assert.equal(draft.assigneeName, 'Lợi');
-  assert.match(draft.title, /\[Slack @Trang_lt\]/);
+  assert.equal(draft.title, 'Em gửi KH confirm trong ngày');
+  assert.ok(draft.subtasks && draft.subtasks.length > 0);
   assert.ok(draft.description.includes('https://slack.com/archives/D0BKS3WNKS7'));
 });
 
@@ -78,3 +79,4 @@ test('slackActionService manages handled status with user isolation', () => {
   mapA = toggleSlackItemDone(alertId, userIdA);
   assert.equal(mapA[alertId], 'done');
 });
+
