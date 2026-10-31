@@ -30,11 +30,24 @@ test('createSessionToken stores user payload and getUserFromToken decodes it acc
 test('testSlackConnection rejects empty or invalid token format safely', async () => {
   const emptyRes = await testSlackConnection('');
   assert.equal(emptyRes.ok, false);
-  assert.match(emptyRes.error || '', /không được để trống/i);
+  assert.ok(emptyRes.error);
 
   const badRes = await testSlackConnection('xoxp-invalid-fake-token-test');
   assert.equal(badRes.ok, false);
   assert.ok(badRes.error);
+});
+
+test('testSlackConnection successfully validates and tests memberId without token', async () => {
+  // Test with valid Member ID format (like user U0BJ70JNERZ)
+  const validMemberRes = await testSlackConnection({ memberId: 'U0BJ70JNERZ' });
+  assert.equal(validMemberRes.ok, true);
+  assert.equal(validMemberRes.userId, 'U0BJ70JNERZ');
+  assert.ok(validMemberRes.message && validMemberRes.message.includes('U0BJ70JNERZ'));
+
+  // Test with invalid format
+  const invalidRes = await testSlackConnection({ memberId: 'invalid-id' });
+  assert.equal(invalidRes.ok, false);
+  assert.match(invalidRes.error || '', /Member ID không hợp lệ/i);
 });
 
 test('getPersonalSlackAlerts filters alerts when memberId or userName is provided', async () => {

@@ -2,14 +2,17 @@ import type { Express, Request, Response } from 'express';
 import { testSlackConnection, getPersonalSlackAlerts } from './slackService.js';
 
 export function registerSlackRoutes(app: Express) {
-  // Test connection to Slack with user-provided token
+  // Test connection to Slack with user-provided token OR memberId
   app.post('/api/slack/test', async (req: Request, res: Response) => {
     try {
-      const { token } = req.body || {};
-      if (!token || typeof token !== 'string') {
-        return res.status(400).json({ ok: false, error: 'Thiếu Slack Token để kiểm tra' });
+      const { token, memberId } = req.body || {};
+      if (!token && !memberId) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Vui lòng cung cấp ít nhất 1 thông tin: Slack Token hoặc Slack Member ID',
+        });
       }
-      const result = await testSlackConnection(token);
+      const result = await testSlackConnection({ token, memberId });
       return res.json(result);
     } catch (error: any) {
       return res.status(500).json({ ok: false, error: error.message || 'Lỗi server khi kiểm tra Slack' });

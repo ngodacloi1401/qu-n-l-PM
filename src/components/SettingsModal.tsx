@@ -51,6 +51,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
   const [testingSlack, setTestingSlack] = useState(false);
   const [slackTestResult, setSlackTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  const hasSlackInput = Boolean(slackToken.trim() || slackMemberId.trim());
+
   const handleTestConnection = async () => {
     setTesting(true);
     setTestResult(null);
@@ -87,24 +89,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
   };
 
   const handleTestSlack = async () => {
-    if (!slackToken.trim()) {
+    if (!hasSlackInput) {
       setSlackTestResult({
         success: false,
-        message: 'Vui lòng nhập Slack User OAuth Token (xoxp-...) trước khi kiểm tra.',
+        message: 'Vui lòng nhập Slack Member ID hoặc Slack User Token (chỉ cần 1 trong 2).',
       });
       return;
     }
     setTestingSlack(true);
     setSlackTestResult(null);
     try {
-      const res = await testSlackToken(slackToken.trim());
+      const res = await testSlackToken(slackToken.trim(), slackMemberId.trim());
       if (res.ok) {
         if (res.userId && !slackMemberId) {
           setSlackMemberId(res.userId);
         }
         setSlackTestResult({
           success: true,
-          message: `Kết nối thành công với tài khoản Slack @${res.user || 'bạn'} (Workspace: ${res.team || 'AnyBIM'}, ID: ${res.userId || 'N/A'})!`,
+          message: res.message || `Kết nối thành công với Slack @${res.user || 'bạn'} (ID: ${res.userId || slackMemberId})!`,
         });
       } else {
         setSlackTestResult({
@@ -151,7 +153,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
               <Settings className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">Cài đặt kết nối & Cá nhân hóa</h3>
+              <h3 className="text-base font-bold text-slate-900">Cài đặt kết nối &amp; Cá nhân hóa</h3>
               <p className="text-xs text-slate-500">Cấu hình Redmine, Slack cá nhân và API keys AI</p>
             </div>
           </div>
@@ -228,34 +230,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Kết nối Slack Cá nhân (Thông báo &amp; Lịch họp)</span>
+                <span>Kết nối Slack Cá nhân (Chỉ cần 1 trong 2 thông tin)</span>
               </label>
               <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
-                Multi-User
+                Tự động lọc
               </span>
             </div>
             <p className="text-[11px] text-slate-500 mb-2.5">
-              Cung cấp Slack Token hoặc Member ID của riêng bạn để trung tâm thông báo chỉ hiển thị mention, cảnh báo và link họp Google Meet liên quan đến bạn.
+              Bạn có thể nhập <strong>Slack Member ID</strong> (nhanh và đơn giản nhất) hoặc <strong>Slack User Token</strong> để chuông thông báo chỉ hiện việc nhắc tên bạn và các link họp Google Meet.
             </p>
 
-            <div className="space-y-2">
-              <div>
-                <label className="text-[11px] font-medium text-slate-600 block mb-1">
-                  Slack User OAuth Token (xoxp-...)
-                </label>
-                <input
-                  type="password"
-                  value={slackToken}
-                  onChange={(e) => setSlackToken(e.target.value)}
-                  placeholder="xoxp-1234567890-... (User OAuth Token)"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div>
+            <div className="space-y-2.5">
+              {/* Option A: Slack Member ID (Recommended) */}
+              <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[11px] font-medium text-slate-600">
-                    Slack Member ID cá nhân
+                  <label className="text-xs font-semibold text-indigo-950 flex items-center gap-1.5">
+                    <span>Slack Member ID cá nhân (Khuyên dùng)</span>
                   </label>
                   <span className="text-[10px] text-slate-400">
                     (Vào Slack → Click Avatar → ... → Copy member ID)
@@ -265,7 +255,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
                   type="text"
                   value={slackMemberId}
                   onChange={(e) => setSlackMemberId(e.target.value)}
-                  placeholder="Ví dụ: U0BJU7SLNC8"
+                  placeholder="Ví dụ: U0BJ70JNERZ"
+                  className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Divider */}
+              <div className="flex items-center gap-2">
+                <div className="h-px bg-slate-200 flex-1" />
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">HOẶC</span>
+                <div className="h-px bg-slate-200 flex-1" />
+              </div>
+
+              {/* Option B: Slack User OAuth Token */}
+              <div>
+                <label className="text-[11px] font-medium text-slate-600 block mb-1">
+                  Slack User OAuth Token (xoxp-...) - Nâng cao
+                </label>
+                <input
+                  type="password"
+                  value={slackToken}
+                  onChange={(e) => setSlackToken(e.target.value)}
+                  placeholder="xoxp-1234567890-... (User OAuth Token nếu có)"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
@@ -274,12 +285,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
                 <button
                   type="button"
                   onClick={handleTestSlack}
-                  disabled={testingSlack || !slackToken.trim()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                  disabled={testingSlack || !hasSlackInput}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${testingSlack ? 'animate-spin text-indigo-600' : ''}`} />
                   <span>{testingSlack ? 'Đang kiểm tra...' : 'Kiểm tra kết nối Slack'}</span>
                 </button>
+                <span className="text-[11px] text-slate-400">
+                  {hasSlackInput ? 'Sẵn sàng kiểm tra' : 'Nhập 1 trong 2 mục phía trên để kiểm tra'}
+                </span>
               </div>
 
               {slackTestResult && (

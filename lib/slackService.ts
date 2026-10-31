@@ -25,46 +25,84 @@ export interface SlackAuthTestResult {
   userId?: string;
   team?: string;
   url?: string;
+  message?: string;
+  matchedAlertsCount?: number;
   error?: string;
 }
 
 /**
- * Kiểm tra tính hợp lệ của Slack User OAuth Token (xoxp-...) hoặc Bot Token (xoxb-...)
+ * Kiểm tra tính hợp lệ của Slack User OAuth Token (xoxp-...) HOẶC Slack Member ID cá nhân (U0...)
  */
-export async function testSlackConnection(token: string): Promise<SlackAuthTestResult> {
-  if (!token || typeof token !== 'string' || !token.trim()) {
-    return { ok: false, error: 'Slack Token không được để trống.' };
+export async function testSlackConnection(
+  options: { token?: string; memberId?: string } | string
+): Promise<SlackAuthTestResult> {
+  const token = typeof options === 'string' ? options : options?.token;
+  const memberId = typeof options === 'string' ? undefined : options?.memberId;
+
+  // 1. Kiểm tra bằng Slack Token nếu có
+  if (token && typeof token === 'string' && token.trim()) {
+    try {
+      const res = await fetch('https://slack.com/api/auth.test', {
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+        },
+        signal: AbortSignal.timeout(6000),
+      });
+
+      const data: any = await res.json();
+      if (data.ok) {
+        return {
+          ok: true,
+          user: data.user,
+          userId: data.user_id,
+          team: data.team,
+          url: data.url,
+          message: `Kết nối thành công với tài khoản Slack @${data.user} (Workspace: ${data.team || 'AnyBIM'}, ID: ${data.user_id})!`,
+        };
+      }
+
+      return {
+        ok: false,
+        error: data.error ? `Slack từ chối: ${data.error}` : 'Xác thực Slack không thành công.',
+      };
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: `Không thể kết nối đến máy chủ Slack API: ${err.message || 'Lỗi mạng hoặc Timeout'}`,
+      };
+    }
   }
 
-  try {
-    const res = await fetch('https://slack.com/api/auth.test', {
-      headers: {
-        Authorization: `Bearer ${token.trim()}`,
-      },
-      signal: AbortSignal.timeout(6000),
-    });
-
-    const data: any = await res.json();
-    if (data.ok) {
+  // 2. Kiểm tra bằng Member ID (Không cần token)
+  if (memberId && typeof memberId === 'string' && memberId.trim()) {
+    const cleanId = memberId.trim().toUpperCase();
+    if (!/^U[A-Z0-9]{8,}$/.test(cleanId)) {
       return {
-        ok: true,
-        user: data.user,
-        userId: data.user_id,
-        team: data.team,
-        url: data.url,
+        ok: false,
+        error: 'Định dạng Slack Member ID không hợp lệ (Member ID thường bắt đầu bằng chữ U và có ít nhất 9 ký tự, ví dụ: U0BJ70JNERZ). Vui lòng kiểm tra lại trên Slack.',
       };
     }
 
+    const localAlerts = getLocalSlackAlerts();
+    const matched = localAlerts.filter((a) =>
+      a.cleanText.toUpperCase().includes(cleanId) ||
+      a.cleanText.toUpperCase().includes(`<@${cleanId}>`) ||
+      a.senderId?.toUpperCase() === cleanId
+    );
+
     return {
-      ok: false,
-      error: data.error ? `Slack từ chối: ${data.error}` : 'Xác thực Slack không thành công.',
-    };
-  } catch (err: any) {
-    return {
-      ok: false,
-      error: `Không thể kết nối đến máy chủ Slack API: ${err.message || 'Lỗi mạng hoặc Timeout'}`,
+      ok: true,
+      userId: cleanId,
+      user: cleanId,
+      matchedAlertsCount: matched.length,
+      message: `Đã nhận diện hợp lệ Member ID: ${cleanId}. Hệ thống sẽ lọc chính xác các thông báo cá nhân, lịch họp Google Meet và thông báo kênh cho bạn (hiện tìm thấy ${matched.length} tin nhắn trực tiếp liên quan)!`,
     };
   }
+
+  return {
+    ok: false,
+    error: 'Vui lòng nhập ít nhất 1 trong 2: Slack User Token hoặc Slack Member ID.',
+  };
 }
 
 /**
@@ -103,7 +141,7 @@ export async function getPersonalSlackAlerts(options: {
     try {
       let resolvedMemberId = memberId?.trim();
       if (!resolvedMemberId) {
-        const auth = await testSlackConnection(token.trim());
+        const auth = await testSlackConnection({ token: token.trim() });
         if (auth.ok && auth.userId) {
           resolvedMemberId = auth.userId;
         }

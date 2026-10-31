@@ -272,12 +272,15 @@ export function saveStoredAuthUser(user: RedmineUser | null): void {
   }
 }
 
-export async function testSlackToken(token: string): Promise<{ ok: boolean; user?: string; userId?: string; team?: string; error?: string }> {
+export async function testSlackToken(
+  token?: string,
+  memberId?: string
+): Promise<{ ok: boolean; user?: string; userId?: string; team?: string; message?: string; error?: string }> {
   try {
     const res = await fetch('/api/slack/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: token.trim() }),
+      body: JSON.stringify({ token: token?.trim(), memberId: memberId?.trim() }),
     });
     const data = await res.json();
     return data;
