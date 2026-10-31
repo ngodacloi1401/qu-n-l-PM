@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Building2,
   Lock,
+  LogOut,
   FileSpreadsheet,
   CalendarRange,
 } from 'lucide-react';
@@ -110,6 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
               currentUser={currentUser}
               onSelectIssue={onSelectIssue}
               onSelectPersonalTask={onSelectPersonalTask}
+              onOpenSettings={onOpenSettings}
             />
 
             {/* Create New Issue Button */}
@@ -182,21 +184,30 @@ export const Header: React.FC<HeaderProps> = ({
               </a>
             )}
 
-            {/* User Profile Badge */}
+            {/* User Profile Badge & Logout */}
             {currentUser && (
               <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
                 <div className="w-8 h-8 rounded-full bg-slate-800 text-amber-300 font-semibold text-xs flex items-center justify-center shadow-xs">
-                  {currentUser.firstname?.[0] || 'L'}
-                  {currentUser.lastname?.[0] || 'N'}
+                  {currentUser.firstname?.[0] || 'U'}
+                  {currentUser.lastname?.[0] || ''}
                 </div>
                 <div className="hidden lg:block text-left leading-tight">
-                  <div className="text-xs font-semibold text-slate-900">
+                  <div className="text-xs font-semibold text-slate-900 truncate max-w-[130px]">
                     {currentUser.firstname} {currentUser.lastname}
                   </div>
                   <div className="text-[11px] text-slate-500 font-mono">
-                    PM ({currentUser.login || 'loi_nd'})
+                    {currentUser.login}
                   </div>
                 </div>
+                {onLock && (
+                  <button
+                    onClick={onLock}
+                    title="Đăng xuất tài khoản"
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             )}
           </div>

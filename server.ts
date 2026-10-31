@@ -8,6 +8,7 @@ import { listGeminiTextModels } from './lib/geminiModels.js';
 import { registerProviderAIRoutes } from './lib/aiRoutes.js';
 import { registerGoogleSheetsRoutes } from './lib/googleSheets.js';
 import { registerAuthRoutes, requireAuth } from './lib/auth.js';
+import { registerSlackRoutes } from './lib/slackRoutes.js';
 import { geminiThinkingConfig, outputTokenLimit, parseReasoningEffort } from './lib/geminiReasoning.js';
 import { resolveRedmineCredentials } from './lib/redmineCredentials.js';
 import dotenv from 'dotenv';
@@ -97,20 +98,8 @@ async function fetchRedmine(
 // -------------------------------------------------------------
 // API Routes
 // -------------------------------------------------------------
-app.get('/api/notifications/alerts', async (_req: Request, res: Response) => {
-  try {
-    const fs = await import('fs');
-    const path = await import('path');
-    const filePath = path.join(process.cwd(), 'public', 'data', 'slack_alerts.json');
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      return res.json(JSON.parse(content));
-    }
-    return res.json([]);
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message || 'Failed to read alerts' });
-  }
-});
+// Slack & Alert notification routes
+registerSlackRoutes(app);
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

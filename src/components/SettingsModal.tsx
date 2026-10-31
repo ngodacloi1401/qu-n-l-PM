@@ -10,6 +10,7 @@ import {
   RotateCcw,
   ExternalLink,
   Sparkles,
+  MessageSquare,
 } from 'lucide-react';
 import {
   getStoredConfig,
@@ -20,6 +21,11 @@ import {
   saveStoredOpenAIKey,
   getStoredAnthropicKey,
   saveStoredAnthropicKey,
+  getStoredSlackToken,
+  saveStoredSlackToken,
+  getStoredSlackMemberId,
+  saveStoredSlackMemberId,
+  testSlackToken,
   DEFAULT_REDMINE_URL,
   DEFAULT_REDMINE_KEY,
 } from '../services/redmineApi';
@@ -36,9 +42,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
   const [geminiKey, setGeminiKey] = useState(getStoredGeminiKey());
   const [openAIKey, setOpenAIKey] = useState(getStoredOpenAIKey());
   const [anthropicKey, setAnthropicKey] = useState(getStoredAnthropicKey());
+  const [slackToken, setSlackToken] = useState(getStoredSlackToken());
+  const [slackMemberId, setSlackMemberId] = useState(getStoredSlackMemberId());
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const [testingSlack, setTestingSlack] = useState(false);
+  const [slackTestResult, setSlackTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const handleTestConnection = async () => {
     setTesting(true);
@@ -75,6 +86,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
     }
   };
 
+  const handleTestSlack = async () => {
+    if (!slackToken.trim()) {
+      setSlackTestResult({
+        success: false,
+        message: 'Vui lòng nhập Slack User OAuth Token (xoxp-...) trước khi kiểm tra.',
+      });
+      return;
+    }
+    setTestingSlack(true);
+    setSlackTestResult(null);
+    try {
+      const res = await testSlackToken(slackToken.trim());
+      if (res.ok) {
+        if (res.userId && !slackMemberId) {
+          setSlackMemberId(res.userId);
+        }
+        setSlackTestResult({
+          success: true,
+          message: `Kết nối thành công với tài khoản Slack @${res.user || 'bạn'} (Workspace: ${res.team || 'AnyBIM'}, ID: ${res.userId || 'N/A'})!`,
+        });
+      } else {
+        setSlackTestResult({
+          success: false,
+          message: res.error || 'Xác thực Slack thất bại',
+        });
+      }
+    } catch (err: any) {
+      setSlackTestResult({
+        success: false,
+        message: err.message || 'Lỗi khi kiểm tra kết nối Slack',
+      });
+    } finally {
+      setTestingSlack(false);
+    }
+  };
+
   const handleSave = () => {
     saveStoredConfig({
       baseUrl: baseUrl.trim().replace(/\/+$/, ''),
@@ -83,6 +130,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
     saveStoredGeminiKey(geminiKey.trim());
     saveStoredOpenAIKey(openAIKey.trim());
     saveStoredAnthropicKey(anthropicKey.trim());
+    saveStoredSlackToken(slackToken.trim());
+    saveStoredSlackMemberId(slackMemberId.trim());
     onSaved();
     onClose();
   };
@@ -102,8 +151,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
               <Settings className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">Cài đặt kết nối & AI Copilot</h3>
-              <p className="text-xs text-slate-500">Cấu hình Redmine và API key của các nhà cung cấp AI</p>
+              <h3 className="text-base font-bold text-slate-900">Cài đặt kết nối & Cá nhân hóa</h3>
+              <p className="text-xs text-slate-500">Cấu hình Redmine, Slack cá nhân và API keys AI</p>
             </div>
           </div>
 
@@ -135,7 +184,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
         <div className="space-y-4">
           {/* Base URL */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
+            <label className="text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5">
               <Globe className="w-3.5 h-3.5 text-slate-500" />
               Địa chỉ Redmine URL
             </label>
@@ -174,6 +223,86 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
             />
           </div>
 
+          {/* Slack Integration Section */}
+          <div className="pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Kết nối Slack Cá nhân (Thông báo &amp; Lịch họp)</span>
+              </label>
+              <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
+                Multi-User
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mb-2.5">
+              Cung cấp Slack Token hoặc Member ID của riêng bạn để trung tâm thông báo chỉ hiển thị mention, cảnh báo và link họp Google Meet liên quan đến bạn.
+            </p>
+
+            <div className="space-y-2">
+              <div>
+                <label className="text-[11px] font-medium text-slate-600 block mb-1">
+                  Slack User OAuth Token (xoxp-...)
+                </label>
+                <input
+                  type="password"
+                  value={slackToken}
+                  onChange={(e) => setSlackToken(e.target.value)}
+                  placeholder="xoxp-1234567890-... (User OAuth Token)"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-medium text-slate-600">
+                    Slack Member ID cá nhân
+                  </label>
+                  <span className="text-[10px] text-slate-400">
+                    (Vào Slack → Click Avatar → ... → Copy member ID)
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={slackMemberId}
+                  onChange={(e) => setSlackMemberId(e.target.value)}
+                  placeholder="Ví dụ: U0BJU7SLNC8"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-800 focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleTestSlack}
+                  disabled={testingSlack || !slackToken.trim()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${testingSlack ? 'animate-spin text-indigo-600' : ''}`} />
+                  <span>{testingSlack ? 'Đang kiểm tra...' : 'Kiểm tra kết nối Slack'}</span>
+                </button>
+              </div>
+
+              {slackTestResult && (
+                <div
+                  className={`p-2.5 rounded-lg text-xs flex items-start gap-2 border ${
+                    slackTestResult.success
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border-rose-200'
+                  }`}
+                >
+                  {slackTestResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1 text-[11px] leading-relaxed">
+                    {slackTestResult.message}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Gemini API Key */}
           <div className="pt-2 border-t border-slate-100">
             <div className="flex items-center justify-between mb-1">
@@ -207,7 +336,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSaved }
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                <span>OpenAI API Key (ChatGPT & Codex)</span>
+                <span>OpenAI API Key (ChatGPT &amp; Codex)</span>
               </label>
               <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-[11px] text-indigo-600 hover:underline flex items-center gap-0.5">
                 <span>Lấy API key</span><ExternalLink className="w-2.5 h-2.5" />

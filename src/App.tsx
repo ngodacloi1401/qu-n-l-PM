@@ -35,7 +35,7 @@ import {
 import { Header } from './components/Header';
 import { FilterBar, FilterState } from './components/FilterBar';
 import { AuthGate } from './components/AuthGate';
-import { checkAuthStatus, logout } from './services/redmineApi';
+import { checkAuthStatus, logout, getStoredAuthUser } from './services/redmineApi';
 import { KanbanBoard } from './components/KanbanBoard';
 import { TableView } from './components/TableView';
 import { DashboardAnalytics } from './components/DashboardAnalytics';
@@ -54,7 +54,7 @@ import { AlertCircle, RefreshCw } from 'lucide-react';
 import { isIssueClosed, vietnamToday } from './services/pmAnalytics';
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<RedmineUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<RedmineUser | null>(() => getStoredAuthUser());
   const [projects, setProjects] = useState<RedmineProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('84'); // Hawee BIM by default or 'all'
   const [issues, setIssues] = useState<RedmineIssue[]>([]);
@@ -102,6 +102,7 @@ export default function App() {
 
   const handleLogout = async () => {
     await logout();
+    setCurrentUser(null);
     setIsAuthenticated(false);
     setIssues([]);
     setProjects([]);
@@ -503,7 +504,7 @@ export default function App() {
   const selectedProject = projects.find((p) => String(p.id) === selectedProjectId);
 
   if (isAuthenticated === false) {
-    return <AuthGate onAuthenticated={() => setIsAuthenticated(true)} />;
+    return <AuthGate onAuthenticated={() => { setIsAuthenticated(true); setCurrentUser(getStoredAuthUser()); }} />;
   }
 
   if (isAuthenticated === null) {

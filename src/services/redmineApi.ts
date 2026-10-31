@@ -235,6 +235,57 @@ export function getStoredAnthropicKey(): string {
   return localStorage.getItem(STORAGE_KEY_ANTHROPIC_KEY) || '';
 }
 
+const STORAGE_KEY_SLACK_TOKEN = 'redmine_pm_slack_token';
+const STORAGE_KEY_SLACK_MEMBER_ID = 'redmine_pm_slack_member_id';
+const STORAGE_KEY_CURRENT_USER = 'redmine_pm_auth_user';
+
+export function getStoredSlackToken(): string {
+  return localStorage.getItem(STORAGE_KEY_SLACK_TOKEN) || '';
+}
+
+export function saveStoredSlackToken(token: string): void {
+  localStorage.setItem(STORAGE_KEY_SLACK_TOKEN, token.trim());
+}
+
+export function getStoredSlackMemberId(): string {
+  return localStorage.getItem(STORAGE_KEY_SLACK_MEMBER_ID) || '';
+}
+
+export function saveStoredSlackMemberId(id: string): void {
+  localStorage.setItem(STORAGE_KEY_SLACK_MEMBER_ID, id.trim());
+}
+
+export function getStoredAuthUser(): RedmineUser | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CURRENT_USER);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveStoredAuthUser(user: RedmineUser | null): void {
+  if (user) {
+    localStorage.setItem(STORAGE_KEY_CURRENT_USER, JSON.stringify(user));
+  } else {
+    localStorage.removeItem(STORAGE_KEY_CURRENT_USER);
+  }
+}
+
+export async function testSlackToken(token: string): Promise<{ ok: boolean; user?: string; userId?: string; team?: string; error?: string }> {
+  try {
+    const res = await fetch('/api/slack/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token.trim() }),
+    });
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Không thể kết nối đến máy chủ Slack' };
+  }
+}
+
 
 const STORAGE_KEY_AUTH_TOKEN = 'redmine_pm_auth_token';
 
@@ -288,6 +339,35 @@ export async function checkAuthStatus(): Promise<boolean> {
   }
 }
 
+export async function loginWithRedmineKey(
+  apiKey: string,
+  baseUrl = DEFAULT_REDMINE_URL,
+  remember = true
+): Promise<{ ok: boolean; user?: RedmineUser; error?: string }> {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ redmineApiKey: apiKey.trim(), baseUrl: baseUrl.trim() }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      return { ok: false, error: data.error || 'Xác thực Redmine API Key thất bại' };
+    }
+    setAuthToken(data.token, remember);
+    saveStoredConfig({
+      baseUrl: baseUrl.trim().replace(/\/+$/, ''),
+      apiKey: apiKey.trim(),
+    });
+    if (data.user) {
+      saveStoredAuthUser(data.user);
+    }
+    return { ok: true, user: data.user };
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Không thể kết nối đến máy chủ xác thực' };
+  }
+}
+
 export async function loginWithPassword(password: string, remember = true): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetch('/api/auth/login', {
@@ -311,6 +391,7 @@ export async function logout(): Promise<void> {
     await fetch('/api/auth/logout', { method: 'POST' });
   } catch {}
   clearAuthToken();
+  saveStoredAuthUser(null);
 }
 
 export function saveStoredAnthropicKey(key: string): void {
