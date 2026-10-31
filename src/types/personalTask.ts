@@ -28,7 +28,9 @@ export interface PersonalTask {
   resultNote: string; // Kết quả công việc / Ghi chú tiến độ
   dueDate: string; // Hạn chót / Due date
   delayReason?: string; // Lý do trễ hạn
-  source: 'excel' | 'manual' | 'redmine';
+  source: 'excel' | 'manual' | 'redmine' | 'slack';
+  slackUrl?: string;
+  slackSender?: string;
   redmineIssueId?: number;
   projectId?: number;
   projectName?: string;

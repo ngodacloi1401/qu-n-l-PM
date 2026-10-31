@@ -15,6 +15,9 @@ import {
   RefreshCw,
   MonitorCheck,
   Settings,
+  CalendarPlus,
+  Check,
+  RotateCcw,
 } from 'lucide-react';
 import type { PersonalTask } from '../types/personalTask';
 import type { RedmineIssue, RedmineUser } from '../types/redmine';
@@ -27,6 +30,12 @@ import {
   getStoredSlackMemberId,
   getAuthToken,
 } from '../services/redmineApi';
+import {
+  getSlackHandledMap,
+  toggleSlackItemDone,
+  setSlackItemStatus,
+  type SlackActionStatus,
+} from '../services/slackActionService';
 
 export interface SlackAlertItem {
   id: string;
@@ -52,6 +61,7 @@ interface WeeklyNotificationDropdownProps {
   currentUser?: RedmineUser | null;
   onSelectIssue?: (issue: RedmineIssue) => void;
   onSelectPersonalTask?: (task: PersonalTask) => void;
+  onConvertSlackToTask?: (alert: SlackAlertItem) => void;
   onOpenSettings?: () => void;
 }
 
@@ -61,15 +71,26 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
   currentUser,
   onSelectIssue,
   onSelectPersonalTask,
+  onConvertSlackToTask,
   onOpenSettings,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'today_overdue' | 'slack_alerts' | 'dueSoon' | 'all'>('today_overdue');
   const [slackAlerts, setSlackAlerts] = useState<SlackAlertItem[]>([]);
   const [isLoadingSlack, setIsLoadingSlack] = useState(false);
+  const [slackFilterMode, setSlackFilterMode] = useState<'pending' | 'done' | 'all'>('pending');
+  const [handledMap, setHandledMap] = useState<Record<string, SlackActionStatus>>(() =>
+    getSlackHandledMap(currentUser?.id)
+  );
+
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const hasPersonalSlack = Boolean(getStoredSlackToken() || getStoredSlackMemberId());
+
+  // Đồng bộ lại handledMap khi đổi tài khoản
+  useEffect(() => {
+    setHandledMap(getSlackHandledMap(currentUser?.id));
+  }, [currentUser?.id]);
 
   // Tải danh sách thông báo Slack từ dữ liệu đồng bộ
   const loadSlackAlerts = async () => {
@@ -121,9 +142,33 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
     });
   }, [personalTasks, redmineIssues, currentUser?.id]);
 
+  // Chỉ đếm các thông báo khẩn/họp CHƯA hoàn thành
   const urgentSlackCount = useMemo(() => {
-    return slackAlerts.filter((a) => a.urgency === 'Cao' || Boolean(a.meetUrl)).length;
-  }, [slackAlerts]);
+    return slackAlerts.filter(
+      (a) => (a.urgency === 'Cao' || Boolean(a.meetUrl)) && handledMap[a.id] !== 'done'
+    ).length;
+  }, [slackAlerts, handledMap]);
+
+  // Tổng số tin nhắn Slack chưa xử lý
+  const pendingSlackCount = useMemo(() => {
+    return slackAlerts.filter((a) => handledMap[a.id] !== 'done').length;
+  }, [slackAlerts, handledMap]);
+
+  const doneSlackCount = useMemo(() => {
+    return slackAlerts.filter((a) => handledMap[a.id] === 'done').length;
+  }, [slackAlerts, handledMap]);
+
+  // Danh sách Slack được lọc theo trạng thái (Cần làm / Đã xong / Tất cả)
+  const displayedSlackAlerts = useMemo(() => {
+    switch (slackFilterMode) {
+      case 'pending':
+        return slackAlerts.filter((a) => handledMap[a.id] !== 'done');
+      case 'done':
+        return slackAlerts.filter((a) => handledMap[a.id] === 'done');
+      default:
+        return slackAlerts;
+    }
+  }, [slackAlerts, handledMap, slackFilterMode]);
 
   const totalActionRequired = summary.totalActionRequired + urgentSlackCount;
 
@@ -182,6 +227,21 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
     }
   };
 
+  const handleToggleSlackDone = (alertId: string) => {
+    const updated = toggleSlackItemDone(alertId, currentUser?.id);
+    setHandledMap(updated);
+  };
+
+  const handleCreateTaskFromSlack = (alert: SlackAlertItem) => {
+    if (onConvertSlackToTask) {
+      // Đánh dấu alert này là in_progress hoặc done
+      const updated = setSlackItemStatus(alert.id, 'done', currentUser?.id);
+      setHandledMap(updated);
+      onConvertSlackToTask(alert);
+      setIsOpen(false);
+    }
+  };
+
   return (
     <div className="relative" ref={dropdownRef}>
       {/* Bell Button */}
@@ -210,7 +270,7 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
 
       {/* Dropdown Panel */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-96 sm:w-[460px] bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+        <div className="absolute right-0 mt-2 w-96 sm:w-[480px] bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
           {/* Header */}
           <div className="p-3.5 bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -227,7 +287,7 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
                   )}
                   {urgentSlackCount > 0 && (
                     <span className="bg-amber-400 text-slate-950 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
-                      {urgentSlackCount} họp/khẩn
+                      {urgentSlackCount} Slack/họp
                     </span>
                   )}
                 </h3>
@@ -264,9 +324,9 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
               </div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-500">Slack &amp; Họp</div>
-              <div className={`font-bold ${urgentSlackCount > 0 ? 'text-indigo-600' : 'text-slate-700'}`}>
-                {slackAlerts.length}
+              <div className="text-[10px] text-slate-500">Slack cần làm</div>
+              <div className={`font-bold ${pendingSlackCount > 0 ? 'text-indigo-600' : 'text-slate-700'}`}>
+                {pendingSlackCount}
               </div>
             </div>
             <div>
@@ -312,7 +372,7 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
               <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
                 activeTab === 'slack_alerts' ? 'bg-white/20' : 'bg-indigo-100 text-indigo-800 font-bold'
               }`}>
-                {slackAlerts.length}
+                {pendingSlackCount}
               </span>
             </button>
 
@@ -353,121 +413,202 @@ export const WeeklyNotificationDropdown: React.FC<WeeklyNotificationDropdownProp
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100 max-h-96">
             {activeTab === 'slack_alerts' ? (
               <>
-                {/* Status subheader banner */}
-                <div className="p-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px]">
-                  <div className="flex items-center gap-1.5 text-slate-600">
-                    {hasPersonalSlack ? (
-                      <>
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="font-medium text-emerald-800">Đã kích hoạt lọc Slack cá nhân</span>
-                      </>
-                    ) : (
-                      <>
-                        <Radio className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
-                        <span>Đang nạp nguồn chung AnyBIM</span>
-                      </>
+                {/* Status subheader banner & filter pills */}
+                <div className="p-2 bg-slate-50 border-b border-slate-100 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <div className="flex items-center gap-1.5 text-slate-600">
+                      {hasPersonalSlack ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="font-medium text-emerald-800">Đã kích hoạt lọc Slack cá nhân</span>
+                        </>
+                      ) : (
+                        <>
+                          <Radio className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
+                          <span>Nguồn chung AnyBIM</span>
+                        </>
+                      )}
+                    </div>
+                    {onOpenSettings && (
+                      <button
+                        type="button"
+                        onClick={() => { setIsOpen(false); onOpenSettings(); }}
+                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                      >
+                        {hasPersonalSlack ? 'Đổi cấu hình' : 'Kết nối Slack riêng'}
+                      </button>
                     )}
                   </div>
-                  {onOpenSettings && (
+
+                  {/* Slack Handling Filter Pills */}
+                  <div className="flex items-center gap-1 text-[11px]">
+                    <span className="text-slate-400 text-[10px] font-medium mr-1">Bộ lọc:</span>
                     <button
                       type="button"
-                      onClick={() => { setIsOpen(false); onOpenSettings(); }}
-                      className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                      onClick={() => setSlackFilterMode('pending')}
+                      className={`px-2 py-0.5 rounded-full font-semibold transition-all cursor-pointer ${
+                        slackFilterMode === 'pending'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
                     >
-                      {hasPersonalSlack ? 'Đổi cấu hình Slack' : 'Kết nối Slack riêng'}
+                      Cần xử lý ({pendingSlackCount})
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => setSlackFilterMode('done')}
+                      className={`px-2 py-0.5 rounded-full font-semibold transition-all cursor-pointer ${
+                        slackFilterMode === 'done'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      Đã xử lý ({doneSlackCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSlackFilterMode('all')}
+                      className={`px-2 py-0.5 rounded-full font-semibold transition-all cursor-pointer ${
+                        slackFilterMode === 'all'
+                          ? 'bg-slate-800 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      Tất cả ({slackAlerts.length})
+                    </button>
+                  </div>
                 </div>
 
                 {/* Danh sách Thông báo Slack & Lịch họp */}
-                {slackAlerts.length === 0 ? (
+                {displayedSlackAlerts.length === 0 ? (
                   <div className="p-6 text-center space-y-2">
                     <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-500 mx-auto flex items-center justify-center">
                       <MessageSquare className="w-5 h-5" />
                     </div>
                     <div className="text-xs font-bold text-slate-800">
-                      Chưa có thông báo Slack mới!
+                      {slackFilterMode === 'done'
+                        ? 'Chưa có thông báo Slack nào được đánh dấu hoàn thành.'
+                        : 'Tuyệt vời! Không còn deadline hoặc yêu cầu Slack nào cần xử lý.'}
                     </div>
                     <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
-                      {hasPersonalSlack
-                        ? 'Không có thông báo mention hoặc cuộc họp mới nào gửi cho bạn.'
-                        : 'Các thông báo lịch học BA, seminar, link Google Meet và tin nhắn khẩn sẽ hiển thị tại đây khi hệ thống quét thấy.'}
+                      {slackFilterMode === 'done'
+                        ? 'Bạn có thể bấm "Xong" trên các tin nhắn đang chờ để lưu vào đây.'
+                        : 'Mọi thông báo khẩn và cuộc họp đã được giải quyết hoặc chuyển thành công việc cá nhân.'}
                     </p>
-                    {onOpenSettings && (
-                      <button
-                        type="button"
-                        onClick={() => { setIsOpen(false); onOpenSettings(); }}
-                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold cursor-pointer"
-                      >
-                        <Settings className="w-3.5 h-3.5" />
-                        <span>{hasPersonalSlack ? 'Quản lý kết nối Slack' : 'Kết nối tài khoản Slack riêng'}</span>
-                      </button>
-                    )}
                   </div>
                 ) : (
-                  slackAlerts.map((alert) => (
-                    <div
-                      key={alert.id}
-                      className={`p-3 transition-colors hover:bg-slate-50 flex flex-col gap-1.5 border-l-3 ${
-                        alert.urgency === 'Cao' || Boolean(alert.meetUrl)
-                          ? 'bg-rose-50/25 border-rose-500'
-                          : 'bg-indigo-50/15 border-indigo-400'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded uppercase bg-indigo-100 text-indigo-800">
-                            {alert.channelName}
+                  displayedSlackAlerts.map((alert) => {
+                    const isDone = handledMap[alert.id] === 'done';
+                    return (
+                      <div
+                        key={alert.id}
+                        className={`p-3 transition-colors hover:bg-slate-50 flex flex-col gap-1.5 border-l-3 ${
+                          isDone
+                            ? 'bg-slate-50/70 border-slate-300 opacity-75'
+                            : alert.urgency === 'Cao' || Boolean(alert.meetUrl)
+                            ? 'bg-rose-50/25 border-rose-500'
+                            : 'bg-indigo-50/15 border-indigo-400'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded uppercase bg-indigo-100 text-indigo-800">
+                              {alert.channelName}
+                            </span>
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                isDone
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : alert.urgency === 'Cao'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {isDone ? 'Đã xong' : alert.urgency}
+                            </span>
+                            <span className="text-[10px] text-slate-500">{alert.timeStr}</span>
+                          </div>
+                          <span className="text-[10px] font-medium text-slate-500 truncate max-w-[120px]">
+                            từ <strong>{alert.senderName}</strong>
                           </span>
-                          <span
-                            className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                              alert.urgency === 'Cao'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {alert.urgency}
-                          </span>
-                          <span className="text-[10px] text-slate-500">{alert.timeStr}</span>
                         </div>
-                        <span className="text-[10px] font-medium text-slate-500 truncate max-w-[120px]">
-                          từ <strong>{alert.senderName}</strong>
-                        </span>
-                      </div>
 
-                      <div className="text-xs font-bold text-slate-900 line-clamp-2">
-                        {alert.title}
-                      </div>
+                        <div className={`text-xs font-bold ${isDone ? 'text-slate-500 line-through' : 'text-slate-900'} line-clamp-2`}>
+                          {alert.title}
+                        </div>
 
-                      <div className="text-[11px] text-slate-600 line-clamp-3 bg-white/80 p-2 rounded-lg border border-slate-200/80 whitespace-pre-line">
-                        {alert.summary}
-                      </div>
+                        <div className="text-[11px] text-slate-600 line-clamp-3 bg-white/80 p-2 rounded-lg border border-slate-200/80 whitespace-pre-line">
+                          {alert.summary}
+                        </div>
 
-                      {/* Action Links */}
-                      <div className="flex items-center gap-2 pt-1">
-                        {alert.meetUrl && (
-                          <a
-                            href={alert.meetUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
-                          >
-                            <Video className="w-3.5 h-3.5" />
-                            <span>Vào Google Meet</span>
-                          </a>
-                        )}
-                        <a
-                          href={alert.slackUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>Mở Slack</span>
-                        </a>
+                        {/* Action Links & Deadline Management Buttons */}
+                        <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            {/* Toggle Done Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSlackDone(alert.id)}
+                              title={isDone ? 'Đánh dấu chưa xử lý (Hoàn tác)' : 'Đánh dấu đã xử lý xong yêu cầu này'}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer border ${
+                                isDone
+                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                                  : 'bg-slate-100 border-slate-200 hover:bg-emerald-50 hover:border-emerald-200 text-slate-700 hover:text-emerald-700'
+                              }`}
+                            >
+                              {isDone ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Đã xử lý</span>
+                                  <RotateCcw className="w-3 h-3 text-slate-400 ml-0.5" />
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-slate-500" />
+                                  <span>Xong</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Convert to Personal Task Button */}
+                            {onConvertSlackToTask && (
+                              <button
+                                type="button"
+                                onClick={() => handleCreateTaskFromSlack(alert)}
+                                title="Đưa yêu cầu này thành một thẻ việc trên Bảng Việc Cá Nhân"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                              >
+                                <CalendarPlus className="w-3.5 h-3.5 text-indigo-600" />
+                                <span>+ Việc cá nhân</span>
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {alert.meetUrl && (
+                              <a
+                                href={alert.meetUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                              >
+                                <Video className="w-3.5 h-3.5" />
+                                <span>Vào Meet</span>
+                              </a>
+                            )}
+                            <a
+                              href={alert.slackUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              <span>Mở Slack</span>
+                            </a>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </>
             ) : (

@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { RedmineProject, RedmineUser, RedmineIssue, ViewMode } from '../types/redmine';
 import type { PersonalTask } from '../types/personalTask';
-import { WeeklyNotificationDropdown } from './WeeklyNotificationDropdown';
+import { WeeklyNotificationDropdown, type SlackAlertItem } from './WeeklyNotificationDropdown';
 
 interface HeaderProps {
   currentUser: RedmineUser | null;
@@ -36,6 +36,7 @@ interface HeaderProps {
   redmineIssues?: RedmineIssue[];
   onSelectIssue?: (issue: RedmineIssue) => void;
   onSelectPersonalTask?: (task: PersonalTask) => void;
+  onConvertSlackToTask?: (alert: SlackAlertItem) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -55,6 +56,7 @@ export const Header: React.FC<HeaderProps> = ({
   redmineIssues = [],
   onSelectIssue,
   onSelectPersonalTask,
+  onConvertSlackToTask,
 }) => {
   const selectedProject = projects.find((p) => String(p.id) === selectedProjectId);
 
@@ -111,6 +113,7 @@ export const Header: React.FC<HeaderProps> = ({
               currentUser={currentUser}
               onSelectIssue={onSelectIssue}
               onSelectPersonalTask={onSelectPersonalTask}
+              onConvertSlackToTask={onConvertSlackToTask}
               onOpenSettings={onOpenSettings}
             />
 

@@ -48,6 +48,8 @@ import { SettingsModal } from './components/SettingsModal';
 import { PersonalTaskView } from './components/personalTask/PersonalTaskView';
 import { TimelineView } from './components/TimelineView';
 import { PersonalTaskModal } from './components/personalTask/PersonalTaskModal';
+import { convertSlackAlertToTaskDraft } from './services/slackActionService';
+import type { SlackAlertItem } from './components/WeeklyNotificationDropdown';
 import { getSavedTasks, saveTasks, getUserScopeKey } from './services/personalTaskStorage';
 import type { PersonalTask } from './types/personalTask';
 import { AlertCircle, RefreshCw } from 'lucide-react';
@@ -98,6 +100,19 @@ export default function App() {
     saveTasks(updated, userScopeKey);
     setShowPersonalTaskModal(false);
     setEditingPersonalTask(null);
+  };
+
+  const handleConvertSlackToTask = (alert: SlackAlertItem) => {
+    const draft = convertSlackAlertToTaskDraft(alert, currentUser?.firstname);
+    const newTask: PersonalTask = {
+      ...draft,
+      id: `pt_slack_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setEditingPersonalTask(newTask);
+    setShowPersonalTaskModal(true);
+    setActiveView('personal');
   };
 
   const handleLogout = async () => {
@@ -537,6 +552,7 @@ export default function App() {
         personalTasks={getSavedTasks(getUserScopeKey(currentUser, config.apiKey))}
         redmineIssues={issues}
         onSelectIssue={(iss) => setSelectedIssueForModal(iss)}
+        onConvertSlackToTask={handleConvertSlackToTask}
         onSelectPersonalTask={(pt) => {
           setEditingPersonalTask(pt);
           setShowPersonalTaskModal(true);
