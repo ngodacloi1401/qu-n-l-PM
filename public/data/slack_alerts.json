@@ -12,7 +12,6 @@
     "tsFloat": 1793412071.919849,
     "timeStr": "09:01 31/10",
     "urgency": "Cao",
-    "category": "broadcast",
     "reason": "Broadcast Tag",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/C02AA0QPELT/p1793412071919849"
@@ -30,7 +29,6 @@
     "tsFloat": 1793411857.450049,
     "timeStr": "08:57 31/10",
     "urgency": "Cao",
-    "category": "broadcast",
     "reason": "Broadcast Tag",
     "meetUrl": "https://meet.google.com/bbz-saoz-tjk",
     "slackUrl": "https://slack.com/archives/C02AA0QPELT/p1793411857450049"
@@ -48,7 +46,6 @@
     "tsFloat": 1793354472.819309,
     "timeStr": "17:01 30/10",
     "urgency": "Cao",
-    "category": "broadcast",
     "reason": "Broadcast Tag",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/C02AA0QPELT/p1793354472819309"
@@ -66,7 +63,6 @@
     "tsFloat": 1793351223.692549,
     "timeStr": "16:07 30/10",
     "urgency": "Trung bình",
-    "category": "dm_action",
     "reason": "DM Action (yeu_cau)",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/D0CALEQUG1X/p1793351223692549"
@@ -84,7 +80,6 @@
     "tsFloat": 1793349351.654689,
     "timeStr": "15:35 30/10",
     "urgency": "Trung bình",
-    "category": "dm_action",
     "reason": "DM Action (yeu_cau)",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/D0C4NDS8DCG/p1793349351654689"
@@ -102,7 +97,6 @@
     "tsFloat": 1793346868.892669,
     "timeStr": "14:54 30/10",
     "urgency": "Cao",
-    "category": "broadcast",
     "reason": "Broadcast Tag",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/C02BFHGDV4Z/p1793346868892669"
@@ -120,7 +114,6 @@
     "tsFloat": 1793332735.712089,
     "timeStr": "10:58 30/10",
     "urgency": "Cao",
-    "category": "thong_bao_lich",
     "reason": "Announcement/Meeting",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/C08E3KTFBS9/p1793332735712089"
@@ -138,7 +131,6 @@
     "tsFloat": 1793331988.686779,
     "timeStr": "10:46 30/10",
     "urgency": "Cao",
-    "category": "broadcast",
     "reason": "Broadcast Tag",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/C02AA0QPELT/p1793331988686779"
@@ -156,7 +148,6 @@
     "tsFloat": 1793264625.023949,
     "timeStr": "16:03 29/10",
     "urgency": "Cao",
-    "category": "broadcast",
     "reason": "Broadcast Tag",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/C0C7H1GCQUB/p1793264625023949"
@@ -174,7 +165,6 @@
     "tsFloat": 1793260842.322179,
     "timeStr": "15:00 29/10",
     "urgency": "Cao",
-    "category": "broadcast",
     "reason": "Broadcast Tag",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/C0C7H1GCQUB/p1793260842322179"
@@ -192,7 +182,6 @@
     "tsFloat": 1793258809.528349,
     "timeStr": "14:26 29/10",
     "urgency": "Cao",
-    "category": "thong_bao_lich",
     "reason": "Announcement/Meeting",
     "meetUrl": "https://meet.google.com/xqx-ysbo-ypm",
     "slackUrl": "https://slack.com/archives/C08E3KTFBS9/p1793258809528349"
@@ -210,7 +199,6 @@
     "tsFloat": 1793252634.688899,
     "timeStr": "12:43 29/10",
     "urgency": "Trung bình",
-    "category": "dm_action",
     "reason": "DM Action (yeu_cau)",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/C0CBBVA1UPP/p1793252634688899"
@@ -228,7 +216,6 @@
     "tsFloat": 1793250153.844979,
     "timeStr": "12:02 29/10",
     "urgency": "Cao",
-    "category": "direct_tag",
     "reason": "Direct Mention",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/D0C4NDS8DCG/p1793250153844979"
@@ -246,7 +233,6 @@
     "tsFloat": 1793248383.967589,
     "timeStr": "11:33 29/10",
     "urgency": "Trung bình",
-    "category": "dm_action",
     "reason": "DM Action (yeu_cau, xac_nhan)",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/D0BKS3WNKS7/p1793248383967589"
@@ -264,7 +250,6 @@
     "tsFloat": 1793248377.446469,
     "timeStr": "11:32 29/10",
     "urgency": "Trung bình",
-    "category": "dm_action",
     "reason": "DM Action (deadline, yeu_cau, xac_nhan)",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/D0BKS3WNKS7/p1793248377446469"
@@ -282,7 +267,6 @@
     "tsFloat": 1793248364.125089,
     "timeStr": "11:32 29/10",
     "urgency": "Trung bình",
-    "category": "dm_action",
     "reason": "DM Action (deadline, yeu_cau, cau_hoi)",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/D0BKS3WNKS7/p1793248364125089"
@@ -300,7 +284,6 @@
     "tsFloat": 1793248348.758119,
     "timeStr": "11:32 29/10",
     "urgency": "Trung bình",
-    "category": "dm_action",
     "reason": "DM Action (xac_nhan)",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/D0BKS3WNKS7/p1793248348758119"
@@ -318,7 +301,6 @@
     "tsFloat": 1793248324.015789,
     "timeStr": "11:32 29/10",
     "urgency": "Trung bình",
-    "category": "dm_action",
     "reason": "DM Action (yeu_cau, xac_nhan)",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/D0BKS3WNKS7/p1793248324015789"
@@ -336,7 +318,6 @@
     "tsFloat": 1793248246.310049,
     "timeStr": "11:30 29/10",
     "urgency": "Trung bình",
-    "category": "dm_action",
     "reason": "DM Action (cau_hoi)",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/D0BKS3WNKS7/p1793248246310049"
@@ -354,7 +335,6 @@
     "tsFloat": 1793248241.971309,
     "timeStr": "11:30 29/10",
     "urgency": "Trung bình",
-    "category": "dm_action",
     "reason": "DM Action (cau_hoi)",
     "meetUrl": null,
     "slackUrl": "https://slack.com/archives/D0BKS3WNKS7/p1793248241971309"
