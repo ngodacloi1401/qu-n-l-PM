@@ -7,6 +7,7 @@ import { registerProviderAIRoutes } from '../lib/aiRoutes.js';
 import { registerGoogleSheetsRoutes } from '../lib/googleSheets.js';
 import { registerAuthRoutes, requireAuth } from '../lib/auth.js';
 import { geminiThinkingConfig, outputTokenLimit, parseReasoningEffort } from '../lib/geminiReasoning.js';
+import { resolveRedmineCredentials } from '../lib/redmineCredentials.js';
 
 const app = express();
 app.use(express.json({ limit: '4mb' }));
@@ -19,10 +20,10 @@ const getRedmineConfig = (req: Request) => {
   const customUrl = req.headers['x-redmine-url'] as string | undefined;
   const customKey = req.headers['x-redmine-api-key'] as string | undefined;
 
-  const baseUrl = (customUrl?.trim() || process.env.REDMINE_URL || 'https://redmine.anybim.vn').replace(/\/+$/, '');
-  const apiKey = customKey?.trim() || process.env.REDMINE_API_KEY || '485a0bd120e3515ab2442afe570f2a6829a55342';
+  return resolveRedmineCredentials(customUrl, customKey);
 
-  return { baseUrl, apiKey };
+
+
 };
 
 async function fetchRedmine(
@@ -83,6 +84,21 @@ async function fetchRedmine(
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.get('/api/notifications/alerts', async (_req: Request, res: Response) => {
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    const filePath = path.join(process.cwd(), 'public', 'data', 'slack_alerts.json');
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      return res.json(JSON.parse(content));
+    }
+    return res.json([]);
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || 'Failed to read alerts' });
+  }
 });
 
 // Authentication routes
