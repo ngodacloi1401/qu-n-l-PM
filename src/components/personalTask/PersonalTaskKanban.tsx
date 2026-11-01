@@ -187,9 +187,8 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                       {/* Title */}
                       <h5
                         onClick={() => openTask(task)}
-                        className={`text-xs font-bold text-slate-900 group-hover:text-indigo-600 leading-snug cursor-pointer mb-1.5 ${
-                          isClosed ? 'line-through text-slate-400' : ''
-                        }`}
+                        className={`text-xs font-bold text-slate-900 group-hover:text-indigo-600 leading-snug cursor-pointer mb-1.5 ${isClosed ? 'line-through text-slate-400' : ''
+                          }`}
                       >
                         {task.parentTaskId && (
                           <span className="font-mono text-[10px] text-slate-500 mr-1 font-bold">
@@ -207,11 +206,10 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                             const isAllDone = doneCount === task.subtasks.length;
                             return (
                               <span
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
-                                  isAllDone
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${isAllDone
                                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                                     : 'bg-slate-100 text-slate-700 border border-slate-200'
-                                }`}
+                                  }`}
                               >
                                 <CheckSquare className="w-3 h-3" />
                                 <span>
@@ -236,9 +234,8 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                       {/* Result Note if present */}
                       {task.resultNote && (
                         <p
-                          className={`text-[11px] p-2 rounded-lg bg-slate-50 mb-2 line-clamp-2 ${
-                            !isClosed ? 'text-red-700 font-medium' : 'text-slate-600'
-                          }`}
+                          className={`text-[11px] p-2 rounded-lg bg-slate-50 mb-2 line-clamp-2 ${!isClosed ? 'text-red-700 font-medium' : 'text-slate-600'
+                            }`}
                         >
                           {task.resultNote}
                         </p>
@@ -286,31 +283,31 @@ export const PersonalTaskKanban: React.FC<PersonalTaskKanbanProps> = ({
                                 <ExternalLink className="w-3.5 h-3.5" /><span className="text-[10px] font-semibold">Redmine</span>
                               </button>
                             ) : <>
-                            {col.id !== 'new' && (
+                              {col.id !== 'new' && (
+                                <button
+                                  onClick={() => moveStatus(task, 'prev')}
+                                  title="Chuyển về trạng thái trước"
+                                  className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                                >
+                                  <ArrowLeft className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                               <button
-                                onClick={() => moveStatus(task, 'prev')}
-                                title="Chuyển về trạng thái trước"
-                                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                                onClick={() => onEditTask(task)}
+                                title="Chỉnh sửa thuộc tính"
+                                className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 cursor-pointer"
                               >
-                                <ArrowLeft className="w-3.5 h-3.5" />
+                                <Edit2 className="w-3.5 h-3.5" />
                               </button>
-                            )}
-                            <button
-                              onClick={() => onEditTask(task)}
-                              title="Chỉnh sửa thuộc tính"
-                              className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-indigo-600 cursor-pointer"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            {col.id !== 'closed' && (
-                              <button
-                                onClick={() => moveStatus(task, 'next')}
-                                title="Chuyển sang trạng thái tiếp theo"
-                                className="p-1 hover:bg-indigo-50 rounded text-indigo-600 hover:text-indigo-800 cursor-pointer"
-                              >
-                                <ArrowRight className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                              {col.id !== 'closed' && (
+                                <button
+                                  onClick={() => moveStatus(task, 'next')}
+                                  title="Chuyển sang trạng thái tiếp theo"
+                                  className="p-1 hover:bg-indigo-50 rounded text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                                >
+                                  <ArrowRight className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </>}
                           </div>
                         </div>

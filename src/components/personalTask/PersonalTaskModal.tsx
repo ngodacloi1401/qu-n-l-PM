@@ -54,11 +54,11 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
   const [category, setCategory] = useState<string>(task?.category || 'Chung');
   const [week, setWeek] = useState(
     task?.week ||
-      existingWeeks[0] ||
-      (() => {
-        const d = new Date();
-        return `Tuần ${String(Math.ceil(d.getDate() / 7)).padStart(2, '0')}`;
-      })
+    existingWeeks[0] ||
+    (() => {
+      const d = new Date();
+      return `Tuần ${String(Math.ceil(d.getDate() / 7)).padStart(2, '0')}`;
+    })
   );
   const [statusName, setStatusName] = useState<string>(task?.statusName || 'To Do');
   const [priorityName, setPriorityName] = useState<string>(task?.priorityName || 'Normal');
@@ -240,11 +240,10 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
             <button
               type="button"
               onClick={handleQuickToggleDone}
-              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                isCurrentlyDone
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${isCurrentlyDone
                   ? 'bg-slate-200 text-slate-700 hover:bg-slate-300'
                   : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-              }`}
+                }`}
             >
               {isCurrentlyDone ? (
                 <>
@@ -527,9 +526,8 @@ export const PersonalTaskModal: React.FC<PersonalTaskModalProps> = ({
                         <div className="w-4 h-4 rounded border-2 border-slate-300 hover:border-emerald-500 shrink-0 transition-colors" />
                       )}
                       <span
-                        className={`text-xs ${
-                          st.completed ? 'line-through text-slate-400 font-normal' : 'text-slate-800 font-medium'
-                        }`}
+                        className={`text-xs ${st.completed ? 'line-through text-slate-400 font-normal' : 'text-slate-800 font-medium'
+                          }`}
                       >
                         {st.title}
                       </span>

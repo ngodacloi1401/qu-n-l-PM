@@ -9,6 +9,7 @@ import { registerProviderAIRoutes } from './lib/aiRoutes.js';
 import { registerGoogleSheetsRoutes } from './lib/googleSheets.js';
 import { registerAuthRoutes, requireAuth } from './lib/auth.js';
 import { registerSlackRoutes } from './lib/slackRoutes.js';
+import { registerTechRadarRoutes } from './lib/techRadarRoutes.js';
 import { geminiThinkingConfig, outputTokenLimit, parseReasoningEffort } from './lib/geminiReasoning.js';
 import { resolveRedmineCredentials } from './lib/redmineCredentials.js';
 import dotenv from 'dotenv';
@@ -100,6 +101,7 @@ async function fetchRedmine(
 // -------------------------------------------------------------
 // Slack & Alert notification routes
 registerSlackRoutes(app);
+registerTechRadarRoutes(app);
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

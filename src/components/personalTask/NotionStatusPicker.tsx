@@ -332,9 +332,8 @@ export const NotionStatusPicker: React.FC<NotionStatusPickerProps> = ({
                           onChange(name);
                           setOpen(false);
                         }}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors ${
-                          isActive ? 'bg-stone-100/90' : 'hover:bg-stone-50'
-                        }`}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors ${isActive ? 'bg-stone-100/90' : 'hover:bg-stone-50'
+                          }`}
                       >
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${itemPill.pillBg} ${itemPill.pillText}`}

@@ -47,6 +47,7 @@ import { CreateIssueModal } from './components/CreateIssueModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PersonalTaskView } from './components/personalTask/PersonalTaskView';
 import { TimelineView } from './components/TimelineView';
+import { TechRadarView } from './components/techRadar/TechRadarView';
 import { PersonalTaskModal } from './components/personalTask/PersonalTaskModal';
 import { convertSlackAlertToTaskDraft } from './services/slackActionService';
 import type { SlackAlertItem } from './components/WeeklyNotificationDropdown';
@@ -690,6 +691,10 @@ export default function App() {
             selectedProject={selectedProject}
             onRefresh={() => loadProjectData(selectedProjectId, filters)}
           />
+        )}
+
+        {activeView === 'radar' && (
+          <TechRadarView />
         )}
 
         {activeView === 'ot' && (

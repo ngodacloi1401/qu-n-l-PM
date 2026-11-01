@@ -135,7 +135,7 @@ export function convertSlackAlertToTaskDraft(
 ): Omit<PersonalTask, 'id' | 'createdAt' | 'updatedAt'> {
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  
+
   // Trích xuất tiêu đề gọn gàng chuẩn Notion/Trello
   const cleanTitle = cleanSlackTaskTitle(alert.cleanText, alert.title);
 

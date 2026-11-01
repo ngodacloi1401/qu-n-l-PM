@@ -14,6 +14,7 @@ import {
   LogOut,
   FileSpreadsheet,
   CalendarRange,
+  Radio,
 } from 'lucide-react';
 import { RedmineProject, RedmineUser, RedmineIssue, ViewMode } from '../types/redmine';
 import type { PersonalTask } from '../types/personalTask';
@@ -303,6 +304,21 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Clock className="w-4 h-4" />
               <span>Tổng hợp OT</span>
+            </button>
+            <button
+              id="tab-radar"
+              onClick={() => onSelectView('radar')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                activeView === 'radar'
+                  ? 'bg-amber-50 text-amber-900 border border-amber-300 shadow-xs'
+                  : 'text-slate-600 hover:text-amber-700 hover:bg-amber-50/50'
+              }`}
+            >
+              <Radio className="w-4 h-4 text-amber-600" />
+              <span>Radar Công nghệ</span>
+              <span className="bg-amber-200 text-amber-900 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                HOT
+              </span>
             </button>
             <button
               id="tab-ai"
