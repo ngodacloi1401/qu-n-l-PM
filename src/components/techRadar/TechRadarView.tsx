@@ -20,10 +20,13 @@ import {
   ArrowUpRight,
   TrendingUp,
   Tag,
-  SlidersHorizontal,
+  Clock,
+  CalendarRange,
+  ChevronDown,
+  X,
 } from 'lucide-react';
-import type { TechRadarArticle, TechRadarCategory } from '../../types/techRadar';
-import { TECH_RADAR_CATEGORIES } from '../../types/techRadar';
+import type { TechRadarArticle, TechRadarCategory, TechRadarTimeRange } from '../../types/techRadar';
+import { TECH_RADAR_CATEGORIES, TECH_RADAR_TIME_PRESETS } from '../../types/techRadar';
 import {
   fetchRadarArticles,
   updateRadarArticle,
@@ -36,12 +39,17 @@ export const TechRadarView: React.FC = () => {
   const [articles, setArticles] = useState<TechRadarArticle[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [todayCount, setTodayCount] = useState<number>(0);
+  const [thisWeekCount, setThisWeekCount] = useState<number>(0);
+  const [thisMonthCount, setThisMonthCount] = useState<number>(0);
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<TechRadarCategory>('all');
-  const [dateFilter, setDateFilter] = useState<string>('all');
+  const [timeRange, setTimeRange] = useState<TechRadarTimeRange>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  const [specificDate, setSpecificDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [bookmarkedOnly, setBookmarkedOnly] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -57,20 +65,27 @@ export const TechRadarView: React.FC = () => {
     try {
       const res = await fetchRadarArticles({
         category: selectedCategory,
-        date: dateFilter,
+        timeRange: specificDate ? undefined : timeRange,
+        date: specificDate || undefined,
+        month: selectedMonth !== 'all' ? selectedMonth : undefined,
         search: searchQuery,
         bookmarked: bookmarkedOnly,
       });
       setArticles(res.articles || []);
       setTotalCount(res.total || 0);
       setTodayCount(res.todayCount || 0);
+      if (typeof res.thisWeekCount === 'number') setThisWeekCount(res.thisWeekCount);
+      if (typeof res.thisMonthCount === 'number') setThisMonthCount(res.thisMonthCount);
+      if (Array.isArray(res.availableMonths) && res.availableMonths.length > 0) {
+        setAvailableMonths(res.availableMonths);
+      }
     } catch (err: any) {
       console.error('[TechRadarView] Load error:', err);
       setError(err.message || 'Không thể tải tin tức công nghệ');
     } finally {
       setIsLoading(false);
     }
-  }, [selectedCategory, dateFilter, searchQuery, bookmarkedOnly]);
+  }, [selectedCategory, timeRange, selectedMonth, specificDate, searchQuery, bookmarkedOnly]);
 
   useEffect(() => {
     loadArticles();
@@ -84,7 +99,6 @@ export const TechRadarView: React.FC = () => {
       await updateRadarArticle(id, { isBookmarked: next });
     } catch (err) {
       console.error('Failed to toggle bookmark:', err);
-      // rollback
       setArticles((prev) => prev.map((a) => (a.id === id ? { ...a, isBookmarked: current } : a)));
     }
   };
@@ -97,7 +111,6 @@ export const TechRadarView: React.FC = () => {
       await updateRadarArticle(id, { isRead: next });
     } catch (err) {
       console.error('Failed to toggle read:', err);
-      // rollback
       setArticles((prev) => prev.map((a) => (a.id === id ? { ...a, isRead: current } : a)));
     }
   };
@@ -115,7 +128,7 @@ export const TechRadarView: React.FC = () => {
     }
   };
 
-  // Compute category counts
+  // Category counts
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = { all: articles.length };
     for (const a of articles) {
@@ -128,7 +141,7 @@ export const TechRadarView: React.FC = () => {
     return articles.filter((a) => a.isBookmarked).length;
   }, [articles]);
 
-  // Selected article object for modal
+  // Selected article for reader modal
   const selectedArticle = useMemo(() => {
     if (!selectedArticleId) return null;
     return articles.find((a) => a.id === selectedArticleId) || null;
@@ -151,6 +164,12 @@ export const TechRadarView: React.FC = () => {
     }
   };
 
+  // Helper formatting for month dropdown
+  const formatMonthLabel = (m: string) => {
+    const [year, month] = m.split('-');
+    return `Tháng ${month}/${year}`;
+  };
+
   // Category Icon Resolver
   const getCategoryIcon = (iconName: string) => {
     switch (iconName) {
@@ -167,6 +186,18 @@ export const TechRadarView: React.FC = () => {
       default:
         return <Globe className="w-4 h-4 text-slate-500" />;
     }
+  };
+
+  // Check if any active time filter is applied
+  const hasActiveTimeFilter = timeRange !== 'all' || selectedMonth !== 'all' || !!specificDate;
+
+  const resetAllFilters = () => {
+    setSelectedCategory('all');
+    setTimeRange('all');
+    setSelectedMonth('all');
+    setSpecificDate('');
+    setSearchQuery('');
+    setBookmarkedOnly(false);
   };
 
   return (
@@ -187,7 +218,7 @@ export const TechRadarView: React.FC = () => {
                   </span>
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                  Tạp chí cập nhật tự động hằng ngày: Toàn cảnh thế giới AI, GitHub repos trending, release mới của Big Tech & thảo luận cộng đồng
+                  Tạp chí công nghệ toàn cầu: Xu hướng AI, GitHub repos trending theo ngày/tuần/tháng, bản phát hành Big Tech & diễn đàn thế giới
                 </p>
               </div>
             </div>
@@ -195,13 +226,21 @@ export const TechRadarView: React.FC = () => {
 
           {/* Quick Stats & Action Controls */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <div className="hidden sm:flex items-center gap-3 px-3.5 py-1.5 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+            <div className="hidden lg:flex items-center gap-2.5 px-3.5 py-1.5 bg-slate-50 rounded-xl border border-slate-200 text-xs">
               <div className="text-slate-600">
-                Tổng số: <strong className="text-slate-900 font-bold">{totalCount}</strong> tin
+                Tổng: <strong className="text-slate-900 font-bold">{totalCount}</strong> tin
+              </div>
+              <div className="w-px h-3.5 bg-slate-300" />
+              <div className="text-blue-700">
+                Hôm nay: <strong className="font-bold">{todayCount}</strong>
               </div>
               <div className="w-px h-3.5 bg-slate-300" />
               <div className="text-emerald-700">
-                Hôm nay: <strong className="font-bold">{todayCount}</strong> mới
+                Tuần này: <strong className="font-bold">{thisWeekCount}</strong>
+              </div>
+              <div className="w-px h-3.5 bg-slate-300" />
+              <div className="text-purple-700">
+                Tháng này: <strong className="font-bold">{thisMonthCount}</strong>
               </div>
               <div className="w-px h-3.5 bg-slate-300" />
               <div className="text-amber-700">
@@ -263,48 +302,33 @@ export const TechRadarView: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div>
-        {/* Filter and Search Bar */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 mb-6">
-          {/* Search Input */}
+      {/* Main Filter Toolbar */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
+        {/* Row 1: Search Bar & View Mode Toggle */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm kiếm theo chủ đề, tiêu đề, công ty, tag (ví dụ: DeepSeek, Claude, GitHub, reasoning...)"
+              placeholder="Tìm kiếm theo chủ đề, công ty, tag (DeepSeek, Claude 3.7, OpenAI, vLLM, Browser-Use, reasoning...)"
               className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Date filter dropdown */}
-            <div className="relative flex items-center">
-              <Calendar className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
-              <select
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="pl-8 pr-7 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-              >
-                <option value="all">Tất cả ngày</option>
-                <option value={new Date().toISOString().slice(0, 10)}>Hôm nay</option>
-                <option value={new Date(Date.now() - 86400000).toISOString().slice(0, 10)}>Hôm qua</option>
-              </select>
-            </div>
-
+          <div className="flex items-center gap-2 shrink-0">
             {/* Bookmarked Filter Pill */}
             <button
               onClick={() => setBookmarkedOnly(!bookmarkedOnly)}
               className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
                 bookmarkedOnly
                   ? 'bg-amber-50 text-amber-800 border-amber-300 shadow-xs'
-                  : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                  : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200'
               }`}
             >
               <Bookmark className={`w-3.5 h-3.5 ${bookmarkedOnly ? 'fill-amber-500 text-amber-500' : ''}`} />
-              <span>Đã lưu</span>
+              <span>Đã lưu ({bookmarkedTotal})</span>
             </button>
 
             {/* Layout switch */}
@@ -331,236 +355,326 @@ export const TechRadarView: React.FC = () => {
           </div>
         </div>
 
-        {/* Loading State */}
-        {isLoading && (
-          <div className="py-20 flex flex-col items-center justify-center text-center">
-            <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin mb-3" />
-            <p className="text-sm font-semibold text-slate-700">Đang cập nhật luồng tin tức công nghệ...</p>
-            <p className="text-xs text-slate-400 mt-1">Đang đồng bộ dữ liệu research mới nhất</p>
-          </div>
-        )}
+        {/* Row 2: Comprehensive Time Filter (Tuần, Tháng, Ngày) */}
+        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
+          {/* Quick Preset Buttons (Tuần này, Tuần trước, Tháng này, Tháng trước...) */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-slate-400 font-medium mr-1 flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Thời gian:</span>
+            </span>
 
-        {/* Error State */}
-        {!isLoading && error && (
-          <div className="p-6 bg-rose-50 border border-rose-200 rounded-2xl text-center">
-            <p className="text-sm font-semibold text-rose-800">{error}</p>
-            <button
-              onClick={loadArticles}
-              className="mt-3 px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold cursor-pointer"
-            >
-              Thử lại
-            </button>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!isLoading && !error && articles.length === 0 && (
-          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center max-w-xl mx-auto shadow-xs">
-            <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <Sparkles className="w-7 h-7" />
-            </div>
-            <h3 className="text-base font-bold text-slate-900">Chưa có bài viết nào phù hợp bộ lọc</h3>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1.5 mb-6">
-              Bạn có thể làm mới bộ lọc, tìm kiếm từ khóa khác, hoặc nạp ngay bộ bài nghiên cứu mẫu để đọc thử.
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <button
-                onClick={handleSeedSample}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-              >
-                Nạp bộ tin tức mẫu thịnh hành
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedCategory('all');
-                  setDateFilter('all');
-                  setSearchQuery('');
-                  setBookmarkedOnly(false);
-                }}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
-              >
-                Xóa tất cả bộ lọc
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Grid Mode (Magazine Cards) */}
-        {!isLoading && !error && articles.length > 0 && viewMode === 'grid' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {articles.map((article) => {
-              const categoryMeta = TECH_RADAR_CATEGORIES.find((c) => c.id === article.category);
+            {TECH_RADAR_TIME_PRESETS.map((preset) => {
+              const isSelected = !specificDate && selectedMonth === 'all' && timeRange === preset.id;
               return (
-                <article
-                  key={article.id}
+                <button
+                  key={preset.id}
                   onClick={() => {
-                    setSelectedArticleId(article.id);
-                    if (!article.isRead) {
-                      handleToggleRead(article.id, false);
-                    }
+                    setTimeRange(preset.id);
+                    setSelectedMonth('all');
+                    setSpecificDate('');
                   }}
-                  className={`bg-white rounded-2xl border transition-all duration-200 hover:shadow-lg hover:border-indigo-300 flex flex-col justify-between overflow-hidden cursor-pointer group ${
-                    article.isRead ? 'border-slate-200/80 bg-white/90' : 'border-slate-300 shadow-xs'
+                  className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'bg-indigo-600 text-white font-semibold shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
                   }`}
                 >
-                  {/* Card Header */}
-                  <div className="p-5 pb-3">
-                    <div className="flex items-center justify-between gap-2 mb-3">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
-                          categoryMeta?.badgeColor || 'bg-slate-100 text-slate-700 border-slate-200'
-                        }`}
-                      >
-                        {categoryMeta?.name || article.category}
-                      </span>
-
-                      <div className="flex items-center gap-1.5">
-                        {article.hotScore ? (
-                          <span
-                            title="Điểm độ hot / upvotes"
-                            className="flex items-center gap-0.5 text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md"
-                          >
-                            <Flame className="w-3 h-3 fill-amber-500 text-amber-500" />
-                            {article.hotScore}
-                          </span>
-                        ) : null}
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleBookmark(article.id, !!article.isBookmarked);
-                          }}
-                          className={`p-1 rounded-md transition-colors ${
-                            article.isBookmarked
-                              ? 'text-amber-500 hover:text-amber-600'
-                              : 'text-slate-300 hover:text-slate-600'
-                          }`}
-                        >
-                          <Bookmark className={`w-4 h-4 ${article.isBookmarked ? 'fill-amber-400' : ''}`} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Title */}
-                    <h2 className="text-base font-bold text-slate-900 group-hover:text-indigo-600 transition-colors line-clamp-2 leading-snug">
-                      {article.title}
-                    </h2>
-
-                    {/* Source and Date */}
-                    <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-400 font-medium">
-                      <span>{article.sourceName}</span>
-                      <span>•</span>
-                      <span>{article.publishedDate}</span>
-                      {!article.isRead && (
-                        <span className="w-2 h-2 rounded-full bg-indigo-600 ml-auto" title="Chưa đọc" />
-                      )}
-                    </div>
-
-                    {/* Summary */}
-                    <p className="text-xs text-slate-600 mt-3 line-clamp-3 leading-relaxed">
-                      {article.summary}
-                    </p>
-
-                    {/* Key Takeaways preview (first 2 items) */}
-                    {article.keyTakeaways && article.keyTakeaways.length > 0 && (
-                      <div className="mt-3.5 pt-3 border-t border-slate-100 space-y-1.5">
-                        {article.keyTakeaways.slice(0, 2).map((point, pIdx) => (
-                          <div key={pIdx} className="flex items-start gap-1.5 text-[11px] text-slate-700">
-                            <span className="text-emerald-600 font-bold leading-none mt-0.5">✓</span>
-                            <span className="line-clamp-1">{point}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Card Footer */}
-                  <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                    <div className="flex items-center gap-1.5 overflow-hidden">
-                      {article.tags?.slice(0, 2).map((tag, tIdx) => (
-                        <span key={tIdx} className="text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-
-                    <span className="inline-flex items-center gap-1 font-semibold text-indigo-600 group-hover:translate-x-0.5 transition-transform">
-                      <span>Đọc tiếp</span>
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                    </span>
-                  </div>
-                </article>
+                  {preset.label}
+                </button>
               );
             })}
           </div>
-        )}
 
-        {/* List Mode (Compact View) */}
-        {!isLoading && !error && articles.length > 0 && viewMode === 'list' && (
-          <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 shadow-xs overflow-hidden">
-            {articles.map((article) => {
-              const categoryMeta = TECH_RADAR_CATEGORIES.find((c) => c.id === article.category);
-              return (
-                <div
-                  key={article.id}
-                  onClick={() => {
-                    setSelectedArticleId(article.id);
-                    if (!article.isRead) {
-                      handleToggleRead(article.id, false);
-                    }
+          {/* Month Dropdown & Specific Date Picker */}
+          <div className="flex items-center gap-2">
+            {/* Specific Month Selector */}
+            {availableMonths.length > 0 && (
+              <div className="relative flex items-center">
+                <CalendarRange className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => {
+                    setSelectedMonth(e.target.value);
+                    setTimeRange('all');
+                    setSpecificDate('');
                   }}
-                  className="p-4 sm:p-5 hover:bg-slate-50 transition-colors cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 group"
+                  className={`pl-7 pr-7 py-1 bg-slate-50 hover:bg-slate-100 border rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                    selectedMonth !== 'all'
+                      ? 'border-indigo-500 text-indigo-700 bg-indigo-50/50'
+                      : 'border-slate-200 text-slate-700'
+                  }`}
                 >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                          categoryMeta?.badgeColor || 'bg-slate-100 text-slate-700 border-slate-200'
-                        }`}
-                      >
-                        {categoryMeta?.name || article.category}
-                      </span>
-                      <span className="text-xs text-slate-400">• {article.publishedDate}</span>
-                      <span className="text-xs text-slate-500 font-medium">• {article.sourceName}</span>
+                  <option value="all">Theo tháng...</option>
+                  {availableMonths.map((m) => (
+                    <option key={m} value={m}>
+                      {formatMonthLabel(m)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Specific Date input */}
+            <div className="relative flex items-center">
+              <input
+                type="date"
+                value={specificDate}
+                onChange={(e) => {
+                  setSpecificDate(e.target.value);
+                  setTimeRange('all');
+                  setSelectedMonth('all');
+                }}
+                className={`py-1 px-2 bg-slate-50 hover:bg-slate-100 border rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                  specificDate ? 'border-indigo-500 text-indigo-700 bg-indigo-50/50' : 'border-slate-200 text-slate-600'
+                }`}
+                title="Lọc chính xác theo ngày"
+              />
+            </div>
+
+            {/* Clear Filters Button if any is active */}
+            {hasActiveTimeFilter && (
+              <button
+                onClick={() => {
+                  setTimeRange('all');
+                  setSelectedMonth('all');
+                  setSpecificDate('');
+                }}
+                className="inline-flex items-center gap-1 text-[11px] text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded-lg border border-rose-200 transition-colors cursor-pointer"
+                title="Xóa bộ lọc thời gian"
+              >
+                <X className="w-3 h-3" />
+                <span>Xóa lọc</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Loading State */}
+      {isLoading && (
+        <div className="py-20 flex flex-col items-center justify-center text-center">
+          <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin mb-3" />
+          <p className="text-sm font-semibold text-slate-700">Đang cập nhật luồng tin tức công nghệ...</p>
+          <p className="text-xs text-slate-400 mt-1">Đang đồng bộ dữ liệu research mới nhất</p>
+        </div>
+      )}
+
+      {/* Error State */}
+      {!isLoading && error && (
+        <div className="p-6 bg-rose-50 border border-rose-200 rounded-2xl text-center">
+          <p className="text-sm font-semibold text-rose-800">{error}</p>
+          <button
+            onClick={loadArticles}
+            className="mt-3 px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold cursor-pointer"
+          >
+            Thử lại
+          </button>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!isLoading && !error && articles.length === 0 && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center max-w-xl mx-auto shadow-xs">
+          <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Sparkles className="w-7 h-7" />
+          </div>
+          <h3 className="text-base font-bold text-slate-900">Không tìm thấy bài viết nào trong khoảng thời gian này</h3>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1.5 mb-6">
+            Bạn có thể thử chọn "Tất cả thời gian", chọn tuần/tháng khác hoặc nạp bộ 26 bài viết nghiên cứu công nghệ mẫu.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={handleSeedSample}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              Nạp bộ 26 tin tức mẫu đầy đủ
+            </button>
+            <button
+              onClick={resetAllFilters}
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+            >
+              Xóa tất cả bộ lọc
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Grid Mode (Magazine Cards) */}
+      {!isLoading && !error && articles.length > 0 && viewMode === 'grid' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {articles.map((article) => {
+            const categoryMeta = TECH_RADAR_CATEGORIES.find((c) => c.id === article.category);
+            return (
+              <article
+                key={article.id}
+                onClick={() => {
+                  setSelectedArticleId(article.id);
+                  if (!article.isRead) {
+                    handleToggleRead(article.id, false);
+                  }
+                }}
+                className={`bg-white rounded-2xl border transition-all duration-200 hover:shadow-lg hover:border-indigo-300 flex flex-col justify-between overflow-hidden cursor-pointer group ${
+                  article.isRead ? 'border-slate-200/80 bg-white/90' : 'border-slate-300 shadow-xs'
+                }`}
+              >
+                {/* Card Header */}
+                <div className="p-5 pb-3">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                        categoryMeta?.badgeColor || 'bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {categoryMeta?.name || article.category}
+                    </span>
+
+                    <div className="flex items-center gap-1.5">
                       {article.hotScore ? (
-                        <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.2 rounded">
+                        <span
+                          title="Điểm độ hot / upvotes"
+                          className="flex items-center gap-0.5 text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md"
+                        >
                           <Flame className="w-3 h-3 fill-amber-500 text-amber-500" />
                           {article.hotScore}
                         </span>
                       ) : null}
-                    </div>
 
-                    <h3 className="text-sm sm:text-base font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                      {article.title}
-                    </h3>
-                    <p className="text-xs text-slate-500 line-clamp-1 mt-1">{article.summary}</p>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleBookmark(article.id, !!article.isBookmarked);
+                        }}
+                        className={`p-1 rounded-md transition-colors ${
+                          article.isBookmarked
+                            ? 'text-amber-500 hover:text-amber-600'
+                            : 'text-slate-300 hover:text-slate-600'
+                        }`}
+                      >
+                        <Bookmark className={`w-4 h-4 ${article.isBookmarked ? 'fill-amber-400' : ''}`} />
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleBookmark(article.id, !!article.isBookmarked);
-                      }}
-                      className={`p-1.5 rounded-lg border transition-colors ${
-                        article.isBookmarked
-                          ? 'bg-amber-50 text-amber-600 border-amber-200'
-                          : 'text-slate-400 border-slate-200 hover:text-slate-800'
+                  {/* Title */}
+                  <h2 className="text-base font-bold text-slate-900 group-hover:text-indigo-600 transition-colors line-clamp-2 leading-snug">
+                    {article.title}
+                  </h2>
+
+                  {/* Source and Date */}
+                  <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-400 font-medium">
+                    <span>{article.sourceName}</span>
+                    <span>•</span>
+                    <span className="text-slate-600 font-semibold">{article.publishedDate}</span>
+                    {!article.isRead && (
+                      <span className="w-2 h-2 rounded-full bg-indigo-600 ml-auto" title="Chưa đọc" />
+                    )}
+                  </div>
+
+                  {/* Summary */}
+                  <p className="text-xs text-slate-600 mt-3 line-clamp-3 leading-relaxed">
+                    {article.summary}
+                  </p>
+
+                  {/* Key Takeaways preview (first 2 items) */}
+                  {article.keyTakeaways && article.keyTakeaways.length > 0 && (
+                    <div className="mt-3.5 pt-3 border-t border-slate-100 space-y-1.5">
+                      {article.keyTakeaways.slice(0, 2).map((point, pIdx) => (
+                        <div key={pIdx} className="flex items-start gap-1.5 text-[11px] text-slate-700">
+                          <span className="text-emerald-600 font-bold leading-none mt-0.5">✓</span>
+                          <span className="line-clamp-1">{point}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Card Footer */}
+                <div className="px-5 py-3 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-1.5 overflow-hidden">
+                    {article.tags?.slice(0, 2).map((tag, tIdx) => (
+                      <span key={tIdx} className="text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+
+                  <span className="inline-flex items-center gap-1 font-semibold text-indigo-600 group-hover:translate-x-0.5 transition-transform">
+                    <span>Đọc tiếp</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {/* List Mode (Compact View) */}
+      {!isLoading && !error && articles.length > 0 && viewMode === 'list' && (
+        <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 shadow-xs overflow-hidden">
+          {articles.map((article) => {
+            const categoryMeta = TECH_RADAR_CATEGORIES.find((c) => c.id === article.category);
+            return (
+              <div
+                key={article.id}
+                onClick={() => {
+                  setSelectedArticleId(article.id);
+                  if (!article.isRead) {
+                    handleToggleRead(article.id, false);
+                  }
+                }}
+                className="p-4 sm:p-5 hover:bg-slate-50 transition-colors cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 group"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        categoryMeta?.badgeColor || 'bg-slate-100 text-slate-700 border-slate-200'
                       }`}
                     >
-                      <Bookmark className={`w-4 h-4 ${article.isBookmarked ? 'fill-amber-500' : ''}`} />
-                    </button>
-                    <span className="text-xs font-semibold text-indigo-600 group-hover:underline flex items-center gap-1">
-                      <span>Chi tiết</span>
-                      <ArrowUpRight className="w-3.5 h-3.5" />
+                      {categoryMeta?.name || article.category}
                     </span>
+                    <span className="text-xs text-slate-500 font-semibold">• {article.publishedDate}</span>
+                    <span className="text-xs text-slate-500 font-medium">• {article.sourceName}</span>
+                    {article.hotScore ? (
+                      <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.2 rounded">
+                        <Flame className="w-3 h-3 fill-amber-500 text-amber-500" />
+                        {article.hotScore}
+                      </span>
+                    ) : null}
                   </div>
+
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                    {article.title}
+                  </h3>
+                  <p className="text-xs text-slate-500 line-clamp-1 mt-1">{article.summary}</p>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+
+                <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleBookmark(article.id, !!article.isBookmarked);
+                    }}
+                    className={`p-1.5 rounded-lg border transition-colors ${
+                      article.isBookmarked
+                        ? 'bg-amber-50 text-amber-600 border-amber-200'
+                        : 'text-slate-400 border-slate-200 hover:text-slate-800'
+                    }`}
+                  >
+                    <Bookmark className={`w-4 h-4 ${article.isBookmarked ? 'fill-amber-500' : ''}`} />
+                  </button>
+                  <span className="text-xs font-semibold text-indigo-600 group-hover:underline flex items-center gap-1">
+                    <span>Chi tiết</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Reader Modal */}
       {selectedArticle && (

@@ -85,3 +85,28 @@ export interface TechRadarStats {
   bookmarkedCount: number;
   categoryCounts: Record<string, number>;
 }
+
+export type TechRadarTimeRange =
+  | 'all'
+  | 'today'
+  | 'yesterday'
+  | 'this_week'
+  | 'last_week'
+  | 'this_month'
+  | 'last_month';
+
+export interface TechRadarTimePreset {
+  id: TechRadarTimeRange;
+  label: string;
+  shortLabel: string;
+}
+
+export const TECH_RADAR_TIME_PRESETS: TechRadarTimePreset[] = [
+  { id: 'all', label: 'Tất cả thời gian', shortLabel: 'Tất cả' },
+  { id: 'today', label: 'Hôm nay', shortLabel: 'Hôm nay' },
+  { id: 'yesterday', label: 'Hôm qua', shortLabel: 'Hôm qua' },
+  { id: 'this_week', label: 'Tuần này', shortLabel: 'Tuần này' },
+  { id: 'last_week', label: 'Tuần trước', shortLabel: 'Tuần trước' },
+  { id: 'this_month', label: 'Tháng này', shortLabel: 'Tháng này' },
+  { id: 'last_month', label: 'Tháng trước', shortLabel: 'Tháng trước' },
+];

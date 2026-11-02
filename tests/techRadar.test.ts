@@ -86,3 +86,36 @@ test('techRadarService filters by category, date, and bookmark', () => {
     assert.ok(bookmarked.some((a) => a.id === target.id));
   }
 });
+
+test('techRadarService filters by week, month, and relative time ranges', () => {
+  seedSampleArticles();
+  const { total, thisWeekCount, thisMonthCount, availableMonths } = getAllArticles();
+  assert.ok(total >= 20, `Expected at least 20 articles, got ${total}`);
+  assert.ok(thisWeekCount > 0, 'Should have articles for this week');
+  assert.ok(thisMonthCount > 0, 'Should have articles for this month');
+  assert.ok(availableMonths.length >= 2, 'Should have articles from at least 2 different months');
+
+  // Test filter this_week
+  const { articles: thisWeekArticles } = getAllArticles({ timeRange: 'this_week' });
+  assert.ok(thisWeekArticles.length > 0);
+
+  // Test filter last_week
+  const { articles: lastWeekArticles } = getAllArticles({ timeRange: 'last_week' });
+  assert.ok(lastWeekArticles.length > 0);
+
+  // Test filter this_month
+  const { articles: thisMonthArticles } = getAllArticles({ timeRange: 'this_month' });
+  assert.ok(thisMonthArticles.length > 0);
+
+  // Test filter last_month
+  const { articles: lastMonthArticles } = getAllArticles({ timeRange: 'last_month' });
+  assert.ok(lastMonthArticles.length > 0);
+
+  // Test filter by specific month string from availableMonths
+  const targetMonth = availableMonths[0];
+  const { articles: monthArticles } = getAllArticles({ month: targetMonth });
+  assert.ok(monthArticles.length > 0);
+  for (const a of monthArticles) {
+    assert.ok(a.publishedDate.startsWith(targetMonth));
+  }
+});

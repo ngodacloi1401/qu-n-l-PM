@@ -3,6 +3,9 @@ import type { TechRadarArticle, TechRadarCategory } from '../types/techRadar';
 export interface GetArticlesParams {
   category?: TechRadarCategory | string;
   date?: string;
+  timeRange?: string;
+  month?: string;
+  week?: string;
   search?: string;
   bookmarked?: boolean;
   limit?: number;
@@ -14,6 +17,9 @@ export interface GetArticlesResponse {
   articles: TechRadarArticle[];
   total: number;
   todayCount: number;
+  thisWeekCount?: number;
+  thisMonthCount?: number;
+  availableMonths?: string[];
   error?: string;
 }
 
@@ -21,6 +27,9 @@ export async function fetchRadarArticles(params?: GetArticlesParams): Promise<Ge
   const query = new URLSearchParams();
   if (params?.category && params.category !== 'all') query.append('category', params.category);
   if (params?.date && params.date !== 'all') query.append('date', params.date);
+  if (params?.timeRange && params.timeRange !== 'all') query.append('timeRange', params.timeRange);
+  if (params?.month && params.month !== 'all') query.append('month', params.month);
+  if (params?.week && params.week !== 'all') query.append('week', params.week);
   if (params?.search && params.search.trim()) query.append('search', params.search.trim());
   if (params?.bookmarked) query.append('bookmarked', 'true');
   if (params?.limit) query.append('limit', String(params.limit));

@@ -13,6 +13,9 @@ export function registerTechRadarRoutes(app: Express) {
     try {
       const category = (req.query.category as string) || undefined;
       const date = (req.query.date as string) || undefined;
+      const timeRange = (req.query.timeRange as string) || (req.query.range as string) || undefined;
+      const month = (req.query.month as string) || undefined;
+      const week = (req.query.week as string) || undefined;
       const search = (req.query.search as string) || undefined;
       const bookmarkedOnly = req.query.bookmarked === 'true' || req.query.bookmarked === '1';
       const limit = req.query.limit ? Number(req.query.limit) : 100;
@@ -21,6 +24,9 @@ export function registerTechRadarRoutes(app: Express) {
       const result = getAllArticles({
         category,
         date,
+        timeRange,
+        month,
+        week,
         search,
         bookmarkedOnly,
         limit,

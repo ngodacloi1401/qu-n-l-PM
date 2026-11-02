@@ -3,6 +3,7 @@ build/
 dist/
 coverage/
 .qa/
+graphify-out/
 .DS_Store
 *.log
 .env*
